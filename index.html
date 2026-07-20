@@ -393,7 +393,7 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
 
 <div id="loading">
   <div class="ld-icon">
-    <img src="" data-logo style="width:38px;height:38px;object-fit:contain">
+    <img src="logo.png" style="width:38px;height:38px;object-fit:contain">
   </div>
   <div class="ld-txt">Carregando...</div>
 </div>
@@ -405,7 +405,7 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
   <div class="lcard">
     <div class="lbrand">
       <div class="lbrand-icon">
-  <img src="" data-logo style="width:38px;height:38px;object-fit:contain">
+  <img src="logo.png" style="width:38px;height:38px;object-fit:contain">
 </div>
       <div><div class="lbrand-name">H.A Solar</div><div class="lbrand-sub">EletroCyre</div></div>
     </div>
@@ -429,7 +429,7 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
   <aside class="sidebar" id="sidebar">
     <div class="sb-brand">
       <div class="sb-brand-icon">
-  <img src="" data-logo style="width:28px;height:28px;object-fit:contain">
+  <img src="logo.png" style="width:28px;height:28px;object-fit:contain">
 </div>
       <div class="sb-brand-txt"><strong>H.A Solar</strong><span>EletroCyre</span></div>
     </div>
@@ -708,7 +708,7 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
    ════════════════════════════════════════════════════════════════ */
 (function () {
   // ⚠️ Troque esta URL sempre que reimplantar uma NOVA versão do Apps Script
-  var API_URL = "https://script.google.com/macros/s/AKfycbz0_iPBalt7lXtakDGCRURY72JAKGOgGnbASM8LbuXbeEPAK0DE1uarD6kLBT_1u4ui9g/exec";
+  var API_URL = "https://script.google.com/macros/s/AKfycbyZLEtAFtmon5jSt6m9nSabTYiokMTpA-8xpimXEx9BVqizk7Yrcyf8_7KemX2kzxui/exec";
 
   function chamarAPI(fnName, args, onSuccess, onFailure) {
     fetch(API_URL, {
@@ -753,18 +753,6 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
   window.google = window.google || {};
   window.google.script = window.google.script || {};
   window.google.script.run = criarRunner(null, null);
-
-  // Carrega o logo (antes era injetado no servidor via __LOGO__)
-  window.addEventListener('DOMContentLoaded', function () {
-    google.script.run
-      .withSuccessHandler(function (base64) {
-        if (!base64) return;
-        document.querySelectorAll('[data-logo]').forEach(function (img) {
-          img.src = base64;
-        });
-      })
-      .getLogoBase64();
-  });
 })();
 </script>
 
