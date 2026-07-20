@@ -1539,21 +1539,28 @@ function eqTab(t) {
     if (btn) btn.classList.toggle('active', x === t);
   });
   var el = document.getElementById('eq-content');
-  if (t === 'inv')    renderInversores(el);
-  if (t === 'mod')    renderModulos(el);
-  if (t === 'out')    renderOutros(el);
-  if (t === 'kit')    renderKits(el);
-  if (t === 'formas') renderFormasPagamento(el);
+  el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:24px">Carregando...</div>';
+  // Usa o cache de equipamentos (já carregado ou em carregamento); só bate
+  // no servidor de novo se ainda não tiver sido buscado ou se foi invalidado
+  // (ex: depois de salvar/editar/excluir algo).
+  _comEquipamentos(function() {
+    if (t === 'inv')    renderInversores(el);
+    if (t === 'mod')    renderModulos(el);
+    if (t === 'out')    renderOutros(el);
+    if (t === 'kit')    renderKits(el);
+    if (t === 'formas') renderFormasPagamento(el);
+  });
+}
+// Marca o cache de equipamentos como desatualizado; a próxima chamada a
+// _comEquipamentos()/eqTab() vai buscar tudo de novo (1 única requisição).
+function _invalidarEquipamentos() {
+  _eqCarregado = false;
 }
 
 function renderFormasPagamento(el) {
   var isAdm = currentUser.papel === 'admin' || currentUser.papel === 'eng_super';
-  el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:24px">Carregando...</div>';
 
-  google.script.run.withSuccessHandler(function (list) {
-    _formasPagamento = Array.isArray(list) ? list : [];
-
-    var linhas = _formasPagamento.map(function (f) {
+  var linhas = _formasPagamento.map(function (f) {
       var ativoBtn = isAdm
         ? '<button class="btn bo bsm" onclick="toggleForma(\'' + f.id + '\',' + !f.ativo + ')" ' +
           'style="color:' + (f.ativo ? 'var(--ok)' : 'var(--dan)') + ';border-color:' + (f.ativo ? 'var(--ok)' : 'var(--dan)') + '">' +
@@ -1598,9 +1605,6 @@ function renderFormasPagamento(el) {
         '<button class="btn bp" style="width:100%;margin-top:4px" onclick="salvarForma()">💾 Salvar</button>' +
       '</div></div>'
     );
-  }).withFailureHandler(function () {
-    el.innerHTML = '<div style="color:var(--dan);padding:16px">Erro ao carregar.</div>';
-  }).listarFormasPagamento();
 }
 
 var _editandoFormaId = null;
@@ -1633,7 +1637,7 @@ function salvarForma() {
       if (r && r.sucesso) {
         toast('Salvo!', 'ok');
         fm('m-forma');
-        eqTab('formas');
+        _invalidarEquipamentos(); eqTab('formas');
       } else toast((r && r.msg) || 'Erro.', 'erro');
     })
     .withFailureHandler(function(e){ ld(false); toast('Erro: ' + e.message, 'erro'); })
@@ -1643,7 +1647,7 @@ function salvarForma() {
 function toggleForma(id, novoAtivo) {
   google.script.run
     .withSuccessHandler(function(r) {
-      if (r && r.sucesso) { toast(novoAtivo ? 'Forma ativada.' : 'Forma desativada.', 'ok'); eqTab('formas'); }
+      if (r && r.sucesso) { toast(novoAtivo ? 'Forma ativada.' : 'Forma desativada.', 'ok'); _invalidarEquipamentos(); eqTab('formas'); }
       else toast((r && r.msg) || 'Erro.', 'erro');
     })
     .withFailureHandler(function(e){ toast('Erro: ' + e.message, 'erro'); })
@@ -1656,16 +1660,13 @@ function excluirForma(id) {
   google.script.run
     .withSuccessHandler(function(r) {
       ld(false);
-      if (r && r.sucesso) { toast('Excluído.', 'ok'); eqTab('formas'); }
+      if (r && r.sucesso) { toast('Excluído.', 'ok'); _invalidarEquipamentos(); eqTab('formas'); }
       else toast((r && r.msg) || 'Erro.', 'erro');
     })
     .withFailureHandler(function(e){ ld(false); toast('Erro: ' + e.message, 'erro'); })
     .excluirFormaPagamento(id);
 }
 function renderOutros(el) {
-  el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:24px">Carregando...</div>';
-  google.script.run.withSuccessHandler(function (list) {
-    _eqOut = Array.isArray(list) ? list : [];
     el.innerHTML =
       '<div class="ch" style="margin-bottom:14px">' +
         '<span style="font-size:.84rem;color:var(--mut)">' + _eqOut.length + ' item(s)</span>' +
@@ -1702,7 +1703,6 @@ function renderOutros(el) {
         '<button class="btn bp" style="width:100%;margin-top:4px" onclick="salvarOut()">Salvar</button>' +
       '</div></div>'
     );
-  }).withFailureHandler(function () { el.innerHTML = '<div style="color:var(--dan)">Erro ao carregar.</div>'; }).listarOutros();
 }
 function abrirModalOut(id) {
   _editandoEqId = id || null;
@@ -1734,22 +1734,19 @@ function salvarOut() {
     ? [_editandoEqId, tipo, marca, modelo, espec, preco]
     : [tipo, marca, modelo, espec, preco];
   google.script.run
-    .withSuccessHandler(function(r){ ld(false); if(r&&r.sucesso){toast('Salvo!','ok');fm('m-out');eqTab('out');}else toast((r&&r.msg)||'Erro.','erro'); })
+    .withSuccessHandler(function(r){ ld(false); if(r&&r.sucesso){toast('Salvo!','ok');fm('m-out');_invalidarEquipamentos();eqTab('out');}else toast((r&&r.msg)||'Erro.','erro'); })
     .withFailureHandler(function(e){ ld(false); toast('Erro: '+e.message,'erro'); })
     [fn].apply(null, args);
 }
 
 function excluirOut(id) {
   ld(true);
-  google.script.run.withSuccessHandler(function(){ld(false);toast('Removido.','ok');eqTab('out');})
+  google.script.run.withSuccessHandler(function(){ld(false);toast('Removido.','ok');_invalidarEquipamentos();eqTab('out');})
     .withFailureHandler(function(e){ld(false);toast('Erro: '+e.message,'erro');}).excluirOutro(id);
 }
 var _editandoEqId = null
 
 function renderInversores(el) {
-  el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:24px">Carregando...</div>';
-  google.script.run.withSuccessHandler(function (list) {
-    _eqInv = Array.isArray(list) ? list : [];
     el.innerHTML =
       '<div class="ch" style="margin-bottom:14px">' +
         '<span style="font-size:.84rem;color:var(--mut)">' + _eqInv.length + ' inversores</span>' +
@@ -1783,7 +1780,6 @@ function renderInversores(el) {
         '<button class="btn bp" style="width:100%;margin-top:4px" onclick="salvarInv()">Salvar</button>' +
       '</div></div>'
     );
-  }).withFailureHandler(function () { el.innerHTML = '<div style="color:var(--dan)">Erro ao carregar.</div>'; }).listarInversores();
 }
 function abrirModalInv(id) {
   _editandoEqId = id || null;
@@ -1812,14 +1808,14 @@ function salvarInv() {
     ? [_editandoEqId, marca, modelo, potn, potm, preco]
     : [marca, modelo, potn, potm, preco];
   google.script.run
-    .withSuccessHandler(function(r) { ld(false); if(r&&r.sucesso){toast('Salvo!','ok');fm('m-inv');eqTab('inv');}else toast((r&&r.msg)||'Erro.','erro'); })
+    .withSuccessHandler(function(r) { ld(false); if(r&&r.sucesso){toast('Salvo!','ok');fm('m-inv');_invalidarEquipamentos();eqTab('inv');}else toast((r&&r.msg)||'Erro.','erro'); })
     .withFailureHandler(function(e){ ld(false); toast('Erro: '+e.message,'erro'); })
     [fn].apply(null, args);
 }
 
 function excluirInv(id) {
   ld(true);
-  google.script.run.withSuccessHandler(function(){ld(false);toast('Removido.','ok');eqTab('inv');})
+  google.script.run.withSuccessHandler(function(){ld(false);toast('Removido.','ok');_invalidarEquipamentos();eqTab('inv');})
     .withFailureHandler(function(e){ld(false);toast('Erro: '+e.message,'erro');}).excluirInversor(id);
 }
 var _eqCarregado = false;
@@ -1857,9 +1853,6 @@ function _comEquipamentos(cb) {
   _preCarregarEquipamentos(); // inicia se ainda não começou
 }
 function renderModulos(el) {
-  el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:24px">Carregando...</div>';
-  google.script.run.withSuccessHandler(function (list) {
-    _eqMod = Array.isArray(list) ? list : [];
     el.innerHTML =
       '<div class="ch" style="margin-bottom:14px">' +
         '<span style="font-size:.84rem;color:var(--mut)">' + _eqMod.length + ' módulos</span>' +
@@ -1891,7 +1884,6 @@ function renderModulos(el) {
         '<button class="btn bp" style="width:100%;margin-top:4px" onclick="salvarMod()">Salvar</button>' +
       '</div></div>'
     );
-  }).withFailureHandler(function () { el.innerHTML = '<div style="color:var(--dan)">Erro.</div>'; }).listarModulos();
 }
 
 function abrirModalMod(id) {
@@ -1918,34 +1910,19 @@ function salvarMod() {
   var fn = _editandoEqId ? 'editarModulo' : 'cadastrarModulo';
   var args = _editandoEqId ? [_editandoEqId, marca, modelo, potn, preco] : [marca, modelo, potn, preco];
   google.script.run
-    .withSuccessHandler(function(r){ ld(false); if(r&&r.sucesso){toast('Salvo!','ok');fm('m-mod');eqTab('mod');}else toast((r&&r.msg)||'Erro.','erro'); })
+    .withSuccessHandler(function(r){ ld(false); if(r&&r.sucesso){toast('Salvo!','ok');fm('m-mod');_invalidarEquipamentos();eqTab('mod');}else toast((r&&r.msg)||'Erro.','erro'); })
     .withFailureHandler(function(e){ ld(false); toast('Erro: '+e.message,'erro'); })
     [fn].apply(null, args);
 }
 
 function excluirMod(id) {
   ld(true);
-  google.script.run.withSuccessHandler(function(){ld(false);toast('Removido.','ok');eqTab('mod');})
+  google.script.run.withSuccessHandler(function(){ld(false);toast('Removido.','ok');_invalidarEquipamentos();eqTab('mod');})
     .withFailureHandler(function(e){ld(false);toast('Erro: '+e.message,'erro');}).excluirModulo(id);
 }
 function renderKits(el){
-  el.innerHTML='<div style="text-align:center;color:var(--mut);padding:24px">Carregando...</div>';
-  function pintar(){
-    el.innerHTML='<div class="ch" style="margin-bottom:14px"><span style="font-size:.84rem;color:var(--mut)">'+_eqKits.length+' kits</span><button class="btn bp bsm" onclick="abrirModalKit()">+ Novo kit</button></div>'+
-      '<div id="lista-kits">'+renderListaKits()+'</div>'+buildModalKit();
-  }
-  // Reaproveita o cache de equipamentos se já carregado; senão busca tudo numa única chamada
-  if (_eqCarregado) { pintar(); return; }
-  google.script.run
-    .withSuccessHandler(function(d){
-      d = d && typeof d === 'object' ? d : {};
-      _eqInv  = Array.isArray(d.inversores) ? d.inversores : [];
-      _eqMod  = Array.isArray(d.modulos)    ? d.modulos    : [];
-      _eqKits = Array.isArray(d.kits)       ? d.kits       : [];
-      pintar();
-    })
-    .withFailureHandler(function(){ _eqInv=[];_eqMod=[];_eqKits=[]; pintar(); })
-    .carregarDadosEquipamento();
+  el.innerHTML='<div class="ch" style="margin-bottom:14px"><span style="font-size:.84rem;color:var(--mut)">'+_eqKits.length+' kits</span><button class="btn bp bsm" onclick="abrirModalKit()">+ Novo kit</button></div>'+
+    '<div id="lista-kits">'+renderListaKits()+'</div>'+buildModalKit();
 }
 function renderListaKits(){
   if(!_eqKits.length)return '<div class="card empty">Nenhum kit cadastrado.</div>';
@@ -2030,13 +2007,13 @@ function salvarKit() {
   google.script.run
     .withSuccessHandler(function(r) {
       ld(false);
-      if (r && r.sucesso) { toast('Kit salvo!', 'ok'); fm('m-kit'); eqTab('kit'); }
+      if (r && r.sucesso) { toast('Kit salvo!', 'ok'); fm('m-kit'); _invalidarEquipamentos(); eqTab('kit'); }
       else toast((r && r.msg) || 'Erro.', 'erro');
     })
     .withFailureHandler(function(e) { ld(false); toast('Erro: ' + e.message, 'erro'); })
     .cadastrarKit(nome, kva, preco, { inversores: inversores, modulos: modulos });
 }
-function excluirKit(id){ld(true);google.script.run.withSuccessHandler(function(){ld(false);toast('Removido.','ok');eqTab('kit');}).withFailureHandler(function(e){ld(false);toast('Erro: '+e.message,'erro');}).excluirKit(id);}
+function excluirKit(id){ld(true);google.script.run.withSuccessHandler(function(){ld(false);toast('Removido.','ok');_invalidarEquipamentos();eqTab('kit');}).withFailureHandler(function(e){ld(false);toast('Erro: '+e.message,'erro');}).excluirKit(id);}
 
 function pgCli(main) {
   var isV  = currentUser.papel === 'vendedor';
@@ -4442,9 +4419,10 @@ var _notifs = [];
 function iniciarNotificacoes() {
   // Só roda para gerente e admin
   if (currentUser.papel === 'vendedor') return;
+  // Carrega uma vez ao entrar no sistema (pro badge já nascer com o número certo).
+  // Não fica mais checando sozinho de tempos em tempos — só atualiza de novo
+  // quando o usuário clicar no sino (toggleNotifPanel).
   carregarNotificacoes();
-  // Atualiza a cada 60 segundos
-  setInterval(carregarNotificacoes, 60000);
 }
 
 function carregarNotificacoes() {
@@ -4452,6 +4430,8 @@ function carregarNotificacoes() {
     .withSuccessHandler(function(lista) {
       _notifs = Array.isArray(lista) ? lista : [];
       renderBadgeNotif();
+      var panel = document.getElementById('notif-panel');
+      if (panel && panel.style.display !== 'none') renderNotifPanel();
     })
     .withFailureHandler(function() {})
     .listarNotificacoes(currentUser.id, currentUser.papel);
@@ -4474,7 +4454,12 @@ function toggleNotifPanel() {
   if (!panel) return;
   var aberto = panel.style.display !== 'none';
   panel.style.display = aberto ? 'none' : 'block';
-  if (!aberto) renderNotifPanel();
+  if (!aberto) {
+    // Ao abrir o sino, busca notificações atualizadas na hora (é o único
+    // gatilho de atualização agora que não existe mais o timer de 60s).
+    renderNotifPanel(); // mostra o que já tem em cache instantaneamente
+    carregarNotificacoes(); // e busca o que houver de novo em seguida
+  }
 }
 function filtrarSelect(inputId, selectId) {
   var q   = document.getElementById(inputId).value.toLowerCase();
