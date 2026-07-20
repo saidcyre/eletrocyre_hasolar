@@ -708,7 +708,7 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
    ════════════════════════════════════════════════════════════════ */
 (function () {
   // ⚠️ Troque esta URL sempre que reimplantar uma NOVA versão do Apps Script
-  var API_URL = "https://script.google.com/macros/s/AKfycbz0_iPBalt7lXtakDGCRURY72JAKGOgGnbASM8LbuXbeEPAK0DE1uarD6kLBT_1u4ui9g/exec";
+  var API_URL = "https://script.google.com/macros/s/AKfycbxwumU8F4nQbRofSLfoAZfwyFGmw9Vq1ah-aPd9XKYvGYLlG9qslnqG4_JaW2LS66aGGA/exec";
 
   function chamarAPI(fnName, args, onSuccess, onFailure) {
     fetch(API_URL, {
@@ -1112,9 +1112,7 @@ function pgGer(main){
   carregarGer();
 }
 function carregarGer(){
-  var g=null,u=null,a=null;
-  function t(){
-    if(g===null||u===null||a===null)return;
+  function t(g,u,a){
     var el=document.getElementById('grid-ger');if(!el)return;
     if(!g.length){el.innerHTML='<div class="card empty">Nenhum gerente cadastrado.</div>';return;}
     el.innerHTML=g.map(function(ger){
@@ -1128,9 +1126,14 @@ function carregarGer(){
         '<button class="btn bo bsm" style="width:100%" onclick="openAtrib(\'ger\',\''+ger.id+'\',\''+ger.nome+'\')">⚙️ Atribuir unidades</button></div>';
     }).join('');
   }
-  google.script.run.withSuccessHandler(function(r){g=Array.isArray(r)?r:[];t();}).withFailureHandler(function(){g=[];t();}).listarGerentes();
-  google.script.run.withSuccessHandler(function(r){u=Array.isArray(r)?r:[];t();}).withFailureHandler(function(){u=[];t();}).listarUnidades();
-  google.script.run.withSuccessHandler(function(r){a=Array.isArray(r)?r:[];t();}).withFailureHandler(function(){a=[];t();}).listarAtribuicoes();
+  // 1 única requisição no lugar de 3 (gerentes, unidades, atribuições)
+  google.script.run
+    .withSuccessHandler(function(d){
+      d = d && typeof d === 'object' ? d : {};
+      t(Array.isArray(d.gerentes)?d.gerentes:[], Array.isArray(d.unidades)?d.unidades:[], Array.isArray(d.atribuicoes)?d.atribuicoes:[]);
+    })
+    .withFailureHandler(function(){ t([],[],[]); })
+    .carregarDadosAtribuicao();
 }
 function salvarGerente(){
   var n=v('g-nome'),e=v('g-email'),s=v('g-senha');
@@ -1145,18 +1148,22 @@ function openAtrib(modo,id,nome){
   document.getElementById('atrib-titulo').textContent=(modo==='un'?'👔 Gerentes de: ':'🏗️ Unidades de: ')+nome;
   document.getElementById('atrib-lista').innerHTML='<p style="color:var(--mut);text-align:center;padding:16px;font-size:.84rem">Carregando...</p>';
   am('m-atrib');
-  var lista=null,atrib=null;
-  function tentar(){
-    if(!lista||!atrib)return;
+  function pintar(lista,atrib){
     var ativas=modo==='un'
       ?atrib.filter(function(x){return String(x.unidade_id)===id;}).map(function(x){return String(x.gerente_id);})
       :atrib.filter(function(x){return String(x.gerente_id)===id;}).map(function(x){return String(x.unidade_id);});
     var itens=lista.map(function(item){return{id:item.id,nome:item.nome,sub:modo==='un'?(item.email||''):((item.cidade||'')+(item.estado?'/'+item.estado:''))};});
     renderCheckList('atrib-lista',itens,ativas);
   }
-  if(modo==='un'){google.script.run.withSuccessHandler(function(r){lista=Array.isArray(r)?r:[];tentar();}).withFailureHandler(function(){lista=[];tentar();}).listarGerentes();}
-  else{google.script.run.withSuccessHandler(function(r){lista=Array.isArray(r)?r:[];tentar();}).withFailureHandler(function(){lista=[];tentar();}).listarUnidades();}
-  google.script.run.withSuccessHandler(function(r){atrib=Array.isArray(r)?r:[];tentar();}).withFailureHandler(function(){atrib=[];tentar();}).listarAtribuicoes();
+  // 1 única requisição no lugar de 2 (lista de gerentes/unidades + atribuições)
+  google.script.run
+    .withSuccessHandler(function(d){
+      d = d && typeof d === 'object' ? d : {};
+      var lista = modo==='un' ? (Array.isArray(d.gerentes)?d.gerentes:[]) : (Array.isArray(d.unidades)?d.unidades:[]);
+      pintar(lista, Array.isArray(d.atribuicoes)?d.atribuicoes:[]);
+    })
+    .withFailureHandler(function(){ pintar([],[]); })
+    .carregarDadosAtribuicao();
 }
 function salvarAtrib(){
   var checks=document.querySelectorAll('#atrib-lista input[type=checkbox]');
@@ -1822,12 +1829,13 @@ var _eqCallbacks = [];
 function _preCarregarEquipamentos() {
   if (_eqCarregado || _eqCarregando) return;
   _eqCarregando = true;
-  var inv = null, mod = null, kits = null, out = null, formas = null;
 
-  function _check() {
-    if (inv === null || mod === null || kits === null || out === null || formas === null) return;
-    _eqInv = inv; _eqMod = mod; _eqKits = kits; _eqOut = out;
-    _formasPagamento = formas;
+  function _aplicar(d) {
+    _eqInv = Array.isArray(d.inversores) ? d.inversores : [];
+    _eqMod = Array.isArray(d.modulos)    ? d.modulos    : [];
+    _eqKits = Array.isArray(d.kits)      ? d.kits       : [];
+    _eqOut = Array.isArray(d.outros)     ? d.outros     : [];
+    _formasPagamento = Array.isArray(d.formas) ? d.formas : [];
     _eqCarregado  = true;
     _eqCarregando = false;
     // Executa callbacks pendentes (ex: se o usuário já clicou em Proposta)
@@ -1835,11 +1843,11 @@ function _preCarregarEquipamentos() {
     _eqCallbacks = [];
   }
 
-  google.script.run.withSuccessHandler(function(r){ inv   = Array.isArray(r)?r:[]; _check(); }).withFailureHandler(function(){ inv=[]; _check(); }).listarInversores();
-  google.script.run.withSuccessHandler(function(r){ mod   = Array.isArray(r)?r:[]; _check(); }).withFailureHandler(function(){ mod=[]; _check(); }).listarModulos();
-  google.script.run.withSuccessHandler(function(r){ kits  = Array.isArray(r)?r:[]; _check(); }).withFailureHandler(function(){ kits=[]; _check(); }).listarKits();
-  google.script.run.withSuccessHandler(function(r){ out   = Array.isArray(r)?r:[]; _check(); }).withFailureHandler(function(){ out=[]; _check(); }).listarOutros();
-  google.script.run.withSuccessHandler(function(r){ formas= Array.isArray(r)?r:[]; _check(); }).withFailureHandler(function(){ formas=[]; _check(); }).listarFormasPagamento();
+  // 1 única requisição no lugar de 5 (inversores, módulos, kits, outros, formas)
+  google.script.run
+    .withSuccessHandler(function(d){ _aplicar(d && typeof d === 'object' ? d : {}); })
+    .withFailureHandler(function(){ _aplicar({}); })
+    .carregarDadosEquipamento();
 }
 
 // Garante que equipamentos estão prontos antes de renderizar Proposta/Financiamento
@@ -1922,16 +1930,22 @@ function excluirMod(id) {
 }
 function renderKits(el){
   el.innerHTML='<div style="text-align:center;color:var(--mut);padding:24px">Carregando...</div>';
-  var inv=null,mod=null,kits=null;
-  function tentar(){
-    if(inv===null||mod===null||kits===null)return;
-    _eqInv=inv;_eqMod=mod;_eqKits=kits;
+  function pintar(){
     el.innerHTML='<div class="ch" style="margin-bottom:14px"><span style="font-size:.84rem;color:var(--mut)">'+_eqKits.length+' kits</span><button class="btn bp bsm" onclick="abrirModalKit()">+ Novo kit</button></div>'+
       '<div id="lista-kits">'+renderListaKits()+'</div>'+buildModalKit();
   }
-  google.script.run.withSuccessHandler(function(r){inv=Array.isArray(r)?r:[];tentar();}).withFailureHandler(function(){inv=[];tentar();}).listarInversores();
-  google.script.run.withSuccessHandler(function(r){mod=Array.isArray(r)?r:[];tentar();}).withFailureHandler(function(){mod=[];tentar();}).listarModulos();
-  google.script.run.withSuccessHandler(function(r){kits=Array.isArray(r)?r:[];tentar();}).withFailureHandler(function(){kits=[];tentar();}).listarKits();
+  // Reaproveita o cache de equipamentos se já carregado; senão busca tudo numa única chamada
+  if (_eqCarregado) { pintar(); return; }
+  google.script.run
+    .withSuccessHandler(function(d){
+      d = d && typeof d === 'object' ? d : {};
+      _eqInv  = Array.isArray(d.inversores) ? d.inversores : [];
+      _eqMod  = Array.isArray(d.modulos)    ? d.modulos    : [];
+      _eqKits = Array.isArray(d.kits)       ? d.kits       : [];
+      pintar();
+    })
+    .withFailureHandler(function(){ _eqInv=[];_eqMod=[];_eqKits=[]; pintar(); })
+    .carregarDadosEquipamento();
 }
 function renderListaKits(){
   if(!_eqKits.length)return '<div class="card empty">Nenhum kit cadastrado.</div>';
