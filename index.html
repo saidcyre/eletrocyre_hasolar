@@ -463,7 +463,7 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
 <div style="padding:8px 10px 4px;border-top:1px solid var(--border);margin-top:4px">
   <input id="versaoSistema"
          type="text"
-         placeholder="v4.0.2"
+         placeholder="v3.11.0"
          value=""
          style="width:100%;padding:4px 8px;border:1px solid var(--border);border-radius:6px;
                 font-size:.65rem;color:var(--mut);background:transparent;text-align:center;
@@ -703,18 +703,90 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
 /* ════════════════════════════════════════════════════════════════
    SHIM google.script.run → fetch()
    Faz a página funcionar hospedada fora do Google (GitHub Pages),
-   falando com o Apps Script como uma API JSON pura. Nenhuma das
-   chamadas google.script.run já existentes no código precisa mudar.
+   falando com a API como JSON puro. Nenhuma das chamadas
+   google.script.run já existentes no código precisa mudar.
+
+   MIGRAÇÃO GRADUAL PRO CLOUDFLARE:
+   Função por função, conforme cada uma é reescrita como Worker,
+   ela entra na lista ROTAS_CLOUDFLARE abaixo e passa a ser atendida
+   pelo Worker (rápido) em vez do Apps Script (lento). O que ainda
+   não foi migrado continua funcionando normalmente no Apps Script,
+   sem precisar mudar nada no resto do código.
    ════════════════════════════════════════════════════════════════ */
 (function () {
   // ⚠️ Troque esta URL sempre que reimplantar uma NOVA versão do Apps Script
-  var API_URL = "https://script.google.com/macros/s/AKfycbxwumU8F4nQbRofSLfoAZfwyFGmw9Vq1ah-aPd9XKYvGYLlG9qslnqG4_JaW2LS66aGGA/exec";
+  var API_URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbz0_iPBalt7lXtakDGCRURY72JAKGOgGnbASM8LbuXbeEPAK0DE1uarD6kLBT_1u4ui9g/exec";
+
+  // ⚠️ Preencha com a URL do seu Worker depois do `wrangler deploy`
+  // (algo como https://crm-solar-api.SEUSUBDOMINIO.workers.dev)
+  var API_URL_CLOUDFLARE = "https://crm-solar-api.eletrocyre.workers.dev";
+
+  // Funções já reescritas no Worker (Fase 1). Adicione o nome aqui
+  // assim que migrar mais uma função pro Cloudflare.
+  var ROTAS_CLOUDFLARE = {
+    fazerLogin: true,
+    listarUnidades: true,
+    cadastrarUnidade: true,
+    listarGerentes: true,
+    cadastrarUsuario: true,
+    listarAtribuicoes: true,
+    carregarDadosAtribuicao: true,
+    atribuirGerente: true,
+    removerAtribuicaoGerente: true,
+    listarInversores: true,
+    listarModulos: true,
+    listarKits: true,
+    listarOutros: true,
+    listarFormasPagamento: true,
+    carregarDadosEquipamento: true,
+    cadastrarInversor: true,
+    editarInversor: true,
+    excluirInversor: true,
+    cadastrarModulo: true,
+    editarModulo: true,
+    excluirModulo: true,
+    cadastrarOutro: true,
+    editarOutro: true,
+    excluirOutro: true,
+    cadastrarKit: true,
+    excluirKit: true,
+    salvarFormaPagamento: true,
+    toggleFormaPagamento: true,
+    excluirFormaPagamento: true,
+    // Fase 2 — vendedores / atribuições / usuários
+    cadastrarVendedor: true,
+    atribuirGerenteAoVendedor: true,
+    atribuirVendedorUnidade: true,
+    removerVendedorUnidade: true,
+    listarAtribuicoesVendedor: true,
+    listarResponsaveisDaUnidade: true,
+    listarTodosUsuarios: true,
+    listarVendedoresAgrupados: true,
+    minhasUnidades: true,
+    trocarSenha: true,
+    // Fase 2 — notificações
+    listarNotificacoes: true,
+    marcarNotificacaoLida: true,
+    marcarTodasLidas: true,
+    criarNotificacao: true,
+    // Fase 2 — pendências
+    criarPendencia: true,
+    concluirPendencia: true,
+    listarPendenciasEnviadas: true,
+    listarPendenciasUsuario: true
+  };
 
   function chamarAPI(fnName, args, onSuccess, onFailure) {
-    fetch(API_URL, {
-      method: 'POST',
+    var noCloudflare = !!ROTAS_CLOUDFLARE[fnName];
+    var url = noCloudflare ? API_URL_CLOUDFLARE : API_URL_APPS_SCRIPT;
+    var headers = noCloudflare
+      ? { 'Content-Type': 'application/json' }
       // text/plain evita o preflight OPTIONS, que o Apps Script não trata bem
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      : { 'Content-Type': 'text/plain;charset=utf-8' };
+
+    fetch(url, {
+      method: 'POST',
+      headers: headers,
       body: JSON.stringify({ fn: fnName, args: args })
     })
       .then(function (r) { return r.json(); })
