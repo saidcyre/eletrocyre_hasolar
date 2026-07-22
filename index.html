@@ -802,7 +802,8 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
     desfazerPagamentoRecebido: true,
     marcarPagamentoRecebido: true,
     reabrirBoleto: true,
-    excluirBoleto: true
+    excluirBoleto: true,
+    carregarDadosIniciais: true
   };
 
   function chamarAPI(fnName, args, onSuccess, onFailure) {
@@ -1040,6 +1041,40 @@ function fm(id){document.getElementById(id).classList.remove('show');}
 function alerta(id,msg,tipo){var el=document.getElementById(id);if(!el)return;el.textContent=msg;el.className='alerta '+tipo;setTimeout(function(){el.className='alerta';},4000);}
 function toast(msg,tipo){var el=document.getElementById('toast');el.textContent=msg;el.className=tipo==='erro'?'terr':tipo==='ok'?'tok':'tdef';clearTimeout(el._t);el._t=setTimeout(function(){el.className='';el.style.display='none';},3200);}
 
+// Carga inicial do app: 1 única requisição no lugar de 3 (clientes,
+// pendências, boletos) — usada só uma vez, logo depois do login.
+var _boot = null;
+function _carregarBoot(depoisCb) {
+  google.script.run
+    .withSuccessHandler(function(d) { _boot = (d && typeof d === 'object') ? d : {}; depoisCb(); })
+    .withFailureHandler(function() { _boot = {}; depoisCb(); })
+    .carregarDadosIniciais(currentUser.id, currentUser.papel, '');
+}
+
+// ── Cache por página: navegar entre abas não busca de novo. Só refaz a
+//    requisição quando a página é invalidada (depois de salvar/excluir
+//    algo) ou quando aperta "Atualizar". ──
+var _pagCache = {};
+var _paginaAtual = null;
+function _comCache(pagina, buscarFn, aplicarFn) {
+  if (Object.prototype.hasOwnProperty.call(_pagCache, pagina)) {
+    aplicarFn(_pagCache[pagina]);
+    return;
+  }
+  buscarFn(function(dados) {
+    _pagCache[pagina] = dados;
+    aplicarFn(dados);
+  });
+}
+function _invalidarPagina(pagina) {
+  delete _pagCache[pagina];
+}
+function atualizarPaginaAtual() {
+  if (!_paginaAtual) return;
+  _invalidarPagina(_paginaAtual);
+  nav(_paginaAtual);
+}
+
 function iniciarApp(u){
   var ini=u.nome?u.nome.charAt(0).toUpperCase():'?';
   var rc=u.papel==='admin'?'ba':u.papel==='gerente'?'bg2':'bv';
@@ -1076,6 +1111,25 @@ function iniciarApp(u){
   };
   var items=MENUS[u.papel]||[];
   document.getElementById('navMenu').innerHTML=items.map(function(m){return '<div class="ni" id="ni-'+m.id+'" data-tip="'+m.l+'" onclick="nav(\''+m.id+'\')"><div class="ni-icon">'+m.i+'</div><span class="ni-lbl">'+m.l+'</span></div>';}).join('');
+
+  var topbarBtns = document.querySelector('.topbar');
+  if (topbarBtns && !document.getElementById('refresh-btn')) {
+    var btnRefresh = document.createElement('div');
+    btnRefresh.id = 'refresh-btn';
+    btnRefresh.title = 'Atualizar esta página';
+    btnRefresh.onclick = function() {
+      btnRefresh.style.transform = 'rotate(360deg)';
+      setTimeout(function(){ btnRefresh.style.transform = ''; }, 400);
+      atualizarPaginaAtual();
+    };
+    btnRefresh.style.cssText =
+      'width:34px;height:34px;border-radius:8px;border:1.5px solid var(--border);' +
+      'background:var(--bg);cursor:pointer;display:flex;align-items:center;justify-content:center;' +
+      'font-size:1rem;flex-shrink:0;transition:transform .4s;';
+    btnRefresh.innerHTML = '🔄';
+    topbarBtns.appendChild(btnRefresh);
+  }
+
   if (u.papel !== 'vendedor') {
     var topbar = document.querySelector('.topbar');
     if (topbar && !document.getElementById('notif-btn')) {
@@ -1110,11 +1164,16 @@ function iniciarApp(u){
     bn.style.gridTemplateColumns='repeat('+Math.min(items.length,5)+',1fr)';
     bn.innerHTML=items.map(function(m){return '<div class="bn-item" id="bni-'+m.id+'" onclick="nav(\''+m.id+'\')"><div class="bn-icon">'+m.i+'</div><span class="bn-lbl">'+m.l+'</span></div>';}).join('');
   }
-  if(items.length)nav('clientes');
-  verificarPendenciasLogin();
+  if(items.length){
+    _carregarBoot(function(){
+      nav('clientes');
+      _mostrarAlertasLogin();
+    });
+  }
 }
 
 function nav(p) {
+  _paginaAtual = p;
   document.querySelectorAll('.ni,.bn-item').forEach(function(e) { e.classList.remove('active'); });
   var n = document.getElementById('ni-' + p); if (n) n.classList.add('active');
   var nb = document.getElementById('bni-' + p); if (nb) nb.classList.add('active');
@@ -1184,8 +1243,11 @@ function pgUn(main){
   var isA=currentUser.papel==='admin';
   main.innerHTML='<div class="ch"><h2 class="tt">🏗️ Unidades</h2>'+(isA?'<button class="btn bp" onclick="am(\'m-unidade\')">+ Nova unidade</button>':'')+
     '</div><div id="grid-un" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px"><div class="card" style="text-align:center;color:var(--mut)">Carregando...</div></div>';
-  google.script.run
-    .withSuccessHandler(function(list){
+  _comCache('unidades', function(cb){
+    google.script.run.withSuccessHandler(cb)
+      .withFailureHandler(function(e){var el=document.getElementById('grid-un');if(el)el.innerHTML='<div class="card" style="color:var(--dan)">Erro: '+e.message+'</div>';})
+      .listarUnidades();
+  }, function(list){
       var el=document.getElementById('grid-un');if(!el)return;
       var data=Array.isArray(list)?list:[];
       if(!data.length){el.innerHTML='<div class="card empty">Nenhuma unidade cadastrada.</div>';return;}
@@ -1196,14 +1258,13 @@ function pgUn(main){
           (isA?'<button class="btn bo bsm" style="width:100%" onclick="openAtrib(\'un\',\''+u.id+'\',\''+u.nome+'\')">⚙️ Gerenciar gerentes</button>':'')+
         '</div>';
       }).join('');
-    }).withFailureHandler(function(e){var el=document.getElementById('grid-un');if(el)el.innerHTML='<div class="card" style="color:var(--dan)">Erro: '+e.message+'</div>';})
-    .listarUnidades();
+  });
 }
 function salvarUnidade(){
   var n=v('un-nome'),c=v('un-cidade'),e=v('un-estado').toUpperCase();
   if(!n||!c||!e)return toast('Preencha todos os campos.','erro');
   ld(true);
-  google.script.run.withSuccessHandler(function(r){ld(false);if(r&&r.sucesso){toast('Unidade cadastrada!','ok');fm('m-unidade');pgUn(document.getElementById('mainContent'));}else toast((r&&r.msg)||'Erro.','erro');})
+  google.script.run.withSuccessHandler(function(r){ld(false);if(r&&r.sucesso){toast('Unidade cadastrada!','ok');fm('m-unidade');_invalidarPagina('unidades');pgUn(document.getElementById('mainContent'));}else toast((r&&r.msg)||'Erro.','erro');})
     .withFailureHandler(function(e){ld(false);toast('Erro: '+e.message,'erro');}).cadastrarUnidade(n,c,e);
 }
 
@@ -1227,20 +1288,19 @@ function carregarGer(){
         '<button class="btn bo bsm" style="width:100%" onclick="openAtrib(\'ger\',\''+ger.id+'\',\''+ger.nome+'\')">⚙️ Atribuir unidades</button></div>';
     }).join('');
   }
-  // 1 única requisição no lugar de 3 (gerentes, unidades, atribuições)
-  google.script.run
-    .withSuccessHandler(function(d){
-      d = d && typeof d === 'object' ? d : {};
-      t(Array.isArray(d.gerentes)?d.gerentes:[], Array.isArray(d.unidades)?d.unidades:[], Array.isArray(d.atribuicoes)?d.atribuicoes:[]);
-    })
-    .withFailureHandler(function(){ t([],[],[]); })
-    .carregarDadosAtribuicao();
+  // 1 única requisição no lugar de 3 (gerentes, unidades, atribuições) — e cacheada
+  _comCache('gerentes', function(cb){
+    google.script.run.withSuccessHandler(cb).withFailureHandler(function(){cb({});}).carregarDadosAtribuicao();
+  }, function(d){
+    d = d && typeof d === 'object' ? d : {};
+    t(Array.isArray(d.gerentes)?d.gerentes:[], Array.isArray(d.unidades)?d.unidades:[], Array.isArray(d.atribuicoes)?d.atribuicoes:[]);
+  });
 }
 function salvarGerente(){
   var n=v('g-nome'),e=v('g-email'),s=v('g-senha');
   if(!n||!e||!s)return toast('Preencha todos os campos.','erro');
   ld(true);
-  google.script.run.withSuccessHandler(function(r){ld(false);if(r&&r.sucesso){toast('Gerente cadastrado!','ok');fm('m-gerente');carregarGer();}else toast((r&&r.msg)||'Erro.','erro');})
+  google.script.run.withSuccessHandler(function(r){ld(false);if(r&&r.sucesso){toast('Gerente cadastrado!','ok');fm('m-gerente');_invalidarPagina('gerentes');_invalidarPagina('usuarios');carregarGer();}else toast((r&&r.msg)||'Erro.','erro');})
     .withFailureHandler(function(e){ld(false);toast('Erro: '+e.message,'erro');}).cadastrarUsuario(n,e,'gerente',s);
 }
 
@@ -1270,7 +1330,7 @@ function salvarAtrib(){
   var checks=document.querySelectorAll('#atrib-lista input[type=checkbox]');
   if(!checks.length){fm('m-atrib');return;}
   ld(true);var total=checks.length,done=0;
-  function fim(){done++;if(done>=total){ld(false);fm('m-atrib');toast('Salvo!','ok');carregarGer();}}
+  function fim(){done++;if(done>=total){ld(false);fm('m-atrib');toast('Salvo!','ok');_invalidarPagina('gerentes');_invalidarPagina('unidades');carregarGer();}}
   for(var i=0;i<checks.length;i++){
     var uid=checks[i].dataset.id;
     var gid=_modoAtrib==='un'?uid:_atribID;
@@ -1298,7 +1358,7 @@ function pgUsr(main) {
           'style="text-align:center;color:var(--mut)">Carregando...</td></tr>' +
         '</tbody></table></div></div>';
 
-      google.script.run.withSuccessHandler(function(list) {
+      function renderTbUsr(list) {
         var tb   = document.getElementById('tb-usr'); if (!tb) return;
         var data = Array.isArray(list) ? list : [];
         if (!data.length) {
@@ -1326,7 +1386,10 @@ function pgUsr(main) {
             acao +
           '</tr>';
         }).join('');
-      }).listarTodosUsuarios();
+      }
+      _comCache('usuarios', function(cb){
+        google.script.run.withSuccessHandler(cb).withFailureHandler(function(){cb([]);}).listarTodosUsuarios();
+      }, renderTbUsr);
     }
 
 function pgGerente(main){
@@ -1342,8 +1405,9 @@ function pgVendedores(main) {
 
   var papelUnidades = currentUser.papel === 'eng_super' ? 'admin' : currentUser.papel;
 
-  google.script.run
-    .withSuccessHandler(function(units) {
+  _comCache('vendedores_unidades', function(cb){
+    google.script.run.withSuccessHandler(cb).withFailureHandler(function(){cb([]);}).minhasUnidades(currentUser.id, papelUnidades);
+  }, function(units) {
       var sel = document.getElementById('nv-unidade'); if (!sel) return;
       var data = Array.isArray(units) ? units : [];
       sel.innerHTML = data.length
@@ -1351,9 +1415,7 @@ function pgVendedores(main) {
             return '<option value="' + u.id + '">' + u.nome + ' — ' + u.cidade + '</option>';
           }).join('')
         : '<option value="">Nenhuma unidade disponível</option>';
-    })
-    .withFailureHandler(function() {})
-    .minhasUnidades(currentUser.id, papelUnidades);
+  });
 
   carregarVendedoresGer();
 }
@@ -1362,15 +1424,17 @@ function carregarVendedoresGer() {
   var el = document.getElementById('grid-vend');
   if (el) el.innerHTML = '<div class="card" style="text-align:center;color:var(--mut)">Carregando...</div>';
 
-  google.script.run
-    .withSuccessHandler(function(lista) {
+  _comCache('vendedores', function(cb){
+    google.script.run.withSuccessHandler(cb)
+      .withFailureHandler(function(e){
+        var el2 = document.getElementById('grid-vend');
+        if (el2) el2.innerHTML = '<div class="card" style="color:var(--dan)">Erro: ' + e.message + '</div>';
+        cb([]);
+      })
+      .listarVendedoresAgrupados(currentUser.id, papelConsulta);
+  }, function(lista) {
       renderVendedoresGer(Array.isArray(lista) ? lista : []);
-    })
-    .withFailureHandler(function(e) {
-      var el2 = document.getElementById('grid-vend');
-      if (el2) el2.innerHTML = '<div class="card" style="color:var(--dan)">Erro: ' + e.message + '</div>';
-    })
-    .listarVendedoresAgrupados(currentUser.id, papelConsulta);
+  });
 }
 function renderVendedoresGer(list) {
   var el = document.getElementById('grid-vend'); if (!el) return;
@@ -1534,6 +1598,7 @@ function salvarGerenteDoVendedor() {
       if (r && r.sucesso) {
         fm('m-atrib-gerente-vend');
         toast('Gerente atualizado!', 'ok');
+        _invalidarPagina('vendedores');
         carregarVendedoresGer();
       } else {
         toast((r && r.msg) || 'Erro ao salvar.', 'erro');
@@ -1566,6 +1631,8 @@ function salvarNovoVendedor() {
         document.getElementById('nv-nome').value  = '';
         document.getElementById('nv-email').value = '';
         document.getElementById('nv-senha').value = '';
+        _invalidarPagina('vendedores');
+        _invalidarPagina('usuarios');
         carregarVendedoresGer();
       } else {
         alerta('al-vend', (r && r.msg) || 'Erro.', 'erro');
@@ -1612,7 +1679,7 @@ function salvarAtribVend(){
   var checks=document.querySelectorAll('#atrib-vend-lista input[type=checkbox]');
   if(!checks.length){fm('m-atrib-vend');return;}
   ld(true);var total=checks.length,done=0;
-  function fim(){done++;if(done>=total){ld(false);fm('m-atrib-vend');toast('Unidades atualizadas!','ok');carregarVendedoresGer();}}
+  function fim(){done++;if(done>=total){ld(false);fm('m-atrib-vend');toast('Unidades atualizadas!','ok');_invalidarPagina('vendedores');carregarVendedoresGer();}}
   for(var i=0;i<checks.length;i++){
     var uid=checks[i].dataset.id;
     if(checks[i].checked)google.script.run.withSuccessHandler(fim).withFailureHandler(fim).atribuirVendedorUnidade(_atribVendID,uid);
@@ -1663,7 +1730,7 @@ function renderFormasPagamento(el) {
 
   var linhas = _formasPagamento.map(function (f) {
       var ativoBtn = isAdm
-        ? '<button class="btn bo bsm" onclick="toggleForma(\'' + f.id + '\',' + !f.ativo + ')" ' +
+        ? '<button class="btn bo bsm" onclick="toggleForma(\'' + f.id + '\',' + !f.ativo + ',this)" ' +
           'style="color:' + (f.ativo ? 'var(--ok)' : 'var(--dan)') + ';border-color:' + (f.ativo ? 'var(--ok)' : 'var(--dan)') + '">' +
           (f.ativo ? '✅ Ativa' : '❌ Inativa') + '</button>'
         : '<span style="font-size:.8rem;color:' + (f.ativo ? 'var(--ok)' : 'var(--dan)') + '">' + (f.ativo ? '✅ Ativa' : '❌ Inativa') + '</span>';
@@ -1745,13 +1812,14 @@ function salvarForma() {
     .salvarFormaPagamento(_editandoFormaId, nome, texto);
 }
 
-function toggleForma(id, novoAtivo) {
+function toggleForma(id, novoAtivo, btn) {
+  if (btn) btn.disabled = true;
   google.script.run
     .withSuccessHandler(function(r) {
       if (r && r.sucesso) { toast(novoAtivo ? 'Forma ativada.' : 'Forma desativada.', 'ok'); _invalidarEquipamentos(); eqTab('formas'); }
-      else toast((r && r.msg) || 'Erro.', 'erro');
+      else { toast((r && r.msg) || 'Erro.', 'erro'); if (btn) btn.disabled = false; }
     })
-    .withFailureHandler(function(e){ toast('Erro: ' + e.message, 'erro'); })
+    .withFailureHandler(function(e){ toast('Erro: ' + e.message, 'erro'); if (btn) btn.disabled = false; })
     .toggleFormaPagamento(id, novoAtivo);
 }
 
@@ -2155,34 +2223,46 @@ function pgCli(main) {
     var papelUnidades = isES ? 'admin' : currentUser.papel;
     var selResp = document.getElementById('nc-responsavel-wrap');
     if (selResp) selResp.style.display = podeEscolherResp ? '' : 'none';
-    google.script.run
-      .withSuccessHandler(function(units) {
+    _comCache('clientes_unidades_dropdown', function(cb){
+      google.script.run.withSuccessHandler(cb).withFailureHandler(function(){cb([]);}).minhasUnidades(currentUser.id, papelUnidades);
+    }, function(units) {
         var sel = document.getElementById('nc-unidade'); if (!sel) return;
         var data = Array.isArray(units) ? units : [];
         sel.innerHTML = data.map(function(u) {
           return '<option value="' + u.id + '" data-nome="' + u.nome + '">' + u.nome + '</option>';
         }).join('') || '<option>Nenhuma unidade</option>';
         if (podeEscolherResp) onChangeUnidadeCliente();
-      })
-      .withFailureHandler(function() {})
-      .minhasUnidades(currentUser.id, papelUnidades);
+    });
   }
 
-  google.script.run
-    .withSuccessHandler(function(r) {
-      _todosClientes    = Array.isArray(r.geral)  ? r.geral  : [];
-      _todosEnviadosEng = Array.isArray(r.eng)    ? r.eng    : [];
-      _datasClientes    = r.datas     || {};
-      _engClientes      = r.engStatus || {};
+  function _aplicarClientes(r) {
+    _todosClientes    = Array.isArray(r.geral)  ? r.geral  : [];
+    _todosEnviadosEng = Array.isArray(r.eng)    ? r.eng    : [];
+    _datasClientes    = r.datas     || {};
+    _engClientes      = r.engStatus || {};
 
-      renderCli(_todosClientes);
-      renderCliEng(_todosEnviadosEng, _engClientes);
-    })
-    .withFailureHandler(function(e) {
-      var el = document.getElementById('lista-cli');
-      if (el) el.innerHTML = '<div class="card" style="color:var(--dan)">Erro: ' + e.message + '</div>';
-    })
-    .carregarPaginaClientes(currentUser.id, currentUser.papel, '');
+    renderCli(_todosClientes);
+    renderCliEng(_todosEnviadosEng, _engClientes);
+  }
+
+  // Se acabou de logar, os dados de clientes já vieram no boot — usa
+  // direto, e já deixa no cache genérico de página. Em qualquer outra
+  // navegação pra essa aba (sem invalidar antes), reaproveita do cache
+  // sem gastar requisição nova.
+  if (_boot && _boot.clientes) {
+    _pagCache['clientes'] = _boot.clientes;
+    _boot.clientes = null; // consome uma vez só
+  }
+  _comCache('clientes', function(cb) {
+    google.script.run
+      .withSuccessHandler(cb)
+      .withFailureHandler(function(e) {
+        var el = document.getElementById('lista-cli');
+        if (el) el.innerHTML = '<div class="card" style="color:var(--dan)">Erro: ' + e.message + '</div>';
+        cb({});
+      })
+      .carregarPaginaClientes(currentUser.id, currentUser.papel, '');
+  }, _aplicarClientes);
 }
 
 // ── Alterna entre abas ────────────────────────────────────────
@@ -2307,7 +2387,7 @@ function _renderBotaoGrupoEng(clienteId) {
     return '<div style="margin-bottom:14px;padding:10px 14px;border-radius:8px;background:#f0fdf4;border:1.5px solid #bbf7d0;display:flex;align-items:center;justify-content:space-between;gap:10px">' +
       '<div style="font-size:.84rem;color:#166534;font-weight:600">✅ Cliente no grupo Engenharia</div>' +
       '<button class="btn bo bsm" style="color:var(--dan);border-color:var(--dan)" ' +
-        'onclick="removerGrupoEng(\'' + clienteId + '\')">Remover do grupo</button>' +
+        'onclick="removerGrupoEng(\'' + clienteId + '\',this)">Remover do grupo</button>' +
     '</div>';
   } else {
     return '<div style="margin-bottom:14px">' +
@@ -2326,6 +2406,7 @@ function enviarParaGrupoEng(clienteId) {
       if (btn) { btn.disabled = false; }
       if (r && r.sucesso) {
         toast('Cliente adicionado ao grupo Engenharia!', 'ok');
+        _invalidarPagina('clientes');
         // Atualiza cache local
         var cli = _todosClientes.find ? _todosClientes.find(function(c){ return c.id === clienteId; }) : null;
         if (cli && !_todosEnviadosEng.some(function(c){ return c.id === clienteId; })) {
@@ -2346,11 +2427,13 @@ function enviarParaGrupoEng(clienteId) {
     .marcarEnviadoEng(clienteId, true);
 }
 
-function removerGrupoEng(clienteId) {
+function removerGrupoEng(clienteId, btn) {
+  if (btn) btn.disabled = true;
   google.script.run
     .withSuccessHandler(function(r) {
       if (r && r.sucesso) {
         toast('Cliente devolvido ao grupo Geral.', 'ok');
+        _invalidarPagina('clientes');
 
         // Move do cache de eng para o cache geral
         var cli = null;
@@ -2373,9 +2456,10 @@ function removerGrupoEng(clienteId) {
         renderCliEng(_todosEnviadosEng, _engClientes || {});
       } else {
         toast((r && r.msg) || 'Erro.', 'erro');
+        if (btn) btn.disabled = false;
       }
     })
-    .withFailureHandler(function(e) { toast('Erro: ' + e.message, 'erro'); })
+    .withFailureHandler(function(e) { toast('Erro: ' + e.message, 'erro'); if (btn) btn.disabled = false; })
     .marcarEnviadoEng(clienteId, false);
 }
 var _datasClientes = {};
@@ -2566,6 +2650,7 @@ function cadastrarCliente() {
         toast('Cliente cadastrado!', 'ok');
         fm('m-cliente');
         document.getElementById('nc-nome').value = '';
+        _invalidarPagina('clientes');
         pgCli(document.getElementById('mainContent'));
       } else {
         toast((r && r.msg) || 'Erro.', 'erro');
@@ -2772,7 +2857,7 @@ function renderUploadDocumentos() {
         '</label>' +
       '</div>' +
       '<div id="doc-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>' +
-      '<button class="btn bp" onclick="enviarArquivos()" style="width:100%">📤 Enviar para o Drive</button>' +
+      '<button class="btn bp" id="btn-enviar-docs" onclick="enviarArquivos()" style="width:100%">📤 Enviar para o Drive</button>' +
       '<div id="upload-status" style="margin-top:10px;font-size:.82rem"></div>' +
       '<div id="doc-prog-wrap" style="display:none;margin-top:8px;background:var(--border);border-radius:99px;height:7px;overflow:hidden">' +
         '<div id="doc-prog-bar" style="height:100%;background:var(--pri);border-radius:99px;transition:width .3s;width:0%"></div>' +
@@ -3022,6 +3107,9 @@ function enviarArquivos() {
 
   if (!_docFiles.length) { toast('Selecione pelo menos um arquivo.', 'erro'); return; }
 
+  var btnEnviar = document.getElementById('btn-enviar-docs');
+  if (btnEnviar) btnEnviar.disabled = true;
+
   var files   = _docFiles.slice();
   var total   = files.length;
   var enviados = 0, erros = 0;
@@ -3043,6 +3131,7 @@ function enviarArquivos() {
       if (latP) FORM.dados['documentos'].lat_poste = latP;
       if (lngP) FORM.dados['documentos'].lng_poste = lngP;
       google.script.run.salvarFormulario(FORM.clienteId, 'documentos', FORM.dados['documentos']);
+      _invalidarPagina('clientes');
     }
 
   function atualizar() {
@@ -3070,7 +3159,9 @@ function enviarArquivos() {
 
     _docFiles = [];
     docRenderPreview();
+    _invalidarPagina('clientes');
     carregarArquivosDocumentos();
+    if (btnEnviar) btnEnviar.disabled = false;
   }
 
   files.forEach(function(item) {
@@ -3282,12 +3373,12 @@ var podeDesfazer = (p === 'admin' || p === 'eng_super');
         '<div style="font-weight:700;font-size:.95rem;margin-bottom:4px">✅ Pagamento recebido</div>' +
         '<div style="font-size:.8rem;opacity:.75">Confirmado em ' + dataRec + '</div>' +
         (podeDesfazer
-          ? '<button onclick="desfazerPagamento()" style="margin-top:10px;padding:6px 14px;background:transparent;border:1.5px solid #166534;border-radius:7px;color:#166534;font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit">↩ Desfazer confirmação</button>'
+          ? '<button onclick="desfazerPagamento(this)" style="margin-top:10px;padding:6px 14px;background:transparent;border:1.5px solid #166534;border-radius:7px;color:#166534;font-size:.78rem;font-weight:600;cursor:pointer;font-family:inherit">↩ Desfazer confirmação</button>'
           : '') +
       '</div>';
   } else {
     htmlStatus = podeMarcar
-      ? '<button class="btn bp" onclick="confirmarPagamentoRecebido()" style="margin-bottom:14px;width:100%;justify-content:center;font-size:.95rem">✅ Marcar Pagamento como Recebido</button>'
+      ? '<button class="btn bp" onclick="confirmarPagamentoRecebido(this)" style="margin-bottom:14px;width:100%;justify-content:center;font-size:.95rem">✅ Marcar Pagamento como Recebido</button>'
       : '<div style="padding:12px 16px;border-radius:10px;background:#fef9c3;color:#854d0e;margin-bottom:14px">⏳ Aguardando confirmação de pagamento</div>';
   }
 
@@ -3323,6 +3414,8 @@ function pagRemoveFile(i){ _pagFiles.splice(i,1); pagHandleFiles({files:[]}); }
 
 function enviarComprovantePagamento() {
   if (!_pagFiles.length) { toast('Selecione pelo menos um arquivo.', 'erro'); return; }
+  var btnEnviar = document.getElementById('btn-enviar-pag');
+  if (btnEnviar) btnEnviar.disabled = true;
   var statusEl = document.getElementById('pag-status');
   var total = _pagFiles.length, enviados = 0, erros = 0;
   if (statusEl) statusEl.innerHTML = '<span style="color:var(--mut)">Enviando 0/' + total + '...</span>';
@@ -3345,19 +3438,23 @@ function enviarComprovantePagamento() {
             var prev = document.getElementById('pag-preview');
             if (prev) prev.innerHTML = '';
             carregarComprovantes();
+            if (btnEnviar) btnEnviar.disabled = false;
           }
         })
         .withFailureHandler(function() {
           erros++;
-          if (enviados + erros >= total && statusEl)
-            statusEl.innerHTML = '<span style="color:var(--dan)">Erro ao enviar.</span>';
+          if (enviados + erros >= total) {
+            if (statusEl) statusEl.innerHTML = '<span style="color:var(--dan)">Erro ao enviar.</span>';
+            if (btnEnviar) btnEnviar.disabled = false;
+          }
         })
         .salvarArquivoPagamento(FORM.clienteId, nome, file.type, base64);
     };
     reader.readAsDataURL(file);
   });
 }
-function desfazerPagamento() {
+function desfazerPagamento(btn) {
+  if (btn) btn.disabled = true;
   google.script.run
     .withSuccessHandler(function(r) {
       if (r && r.sucesso) {
@@ -3365,15 +3462,18 @@ function desfazerPagamento() {
         FORM.dados['pagamento'].pagamento_recebido = 'Nao';
         FORM.dados['pagamento'].recebido_em = '';
         toast('Confirmação desfeita.', 'ok');
+        _invalidarPagina('clientes');
         renderFormStep(FORM.stepAtual);
       } else {
         toast((r && r.msg) || 'Erro.', 'erro');
+        if (btn) btn.disabled = false;
       }
     })
-    .withFailureHandler(function(e) { toast('Erro: ' + e.message, 'erro'); })
+    .withFailureHandler(function(e) { toast('Erro: ' + e.message, 'erro'); if (btn) btn.disabled = false; })
     .desfazerPagamentoRecebido(FORM.clienteId, currentUser.papel);
 }
-function confirmarPagamentoRecebido() {
+function confirmarPagamentoRecebido(btn) {
+  if (btn) btn.disabled = true;
   google.script.run
     .withSuccessHandler(function(r) {
       if (r && r.sucesso) {
@@ -3381,13 +3481,15 @@ function confirmarPagamentoRecebido() {
         FORM.dados['pagamento'].pagamento_recebido = 'Sim';
         FORM.dados['pagamento'].recebido_em = new Date().toISOString();
         toast('Pagamento confirmado! ✅', 'ok');
+        _invalidarPagina('clientes');
         renderFormStep(FORM.stepAtual);
         carregarComprovantes();
       } else {
         toast((r && r.msg) || 'Erro.', 'erro');
+        if (btn) btn.disabled = false;
       }
     })
-    .withFailureHandler(function(e) { toast('Erro: ' + e.message, 'erro'); })
+    .withFailureHandler(function(e) { toast('Erro: ' + e.message, 'erro'); if (btn) btn.disabled = false; })
     .marcarPagamentoRecebido(FORM.clienteId, currentUser.id, currentUser.papel);
 }
 
@@ -3465,14 +3567,14 @@ function renderEngenhariaStep(salvo) {
       '<option value="">-- Selecione o status --</option>' + optsStatus +
     '</select>' +
     '<textarea id="eng-obs" rows="3" placeholder="Observações técnicas..." style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:.85rem;background:var(--card);color:var(--txt);resize:vertical;box-sizing:border-box;margin-bottom:10px">'+obsAtual+'</textarea>' +
-    '<button class="btn bp" onclick="salvarStatusEng()" style="margin-bottom:18px">💾 Salvar Status</button>' +
+    '<button class="btn bp" onclick="salvarStatusEng(this)" style="margin-bottom:18px">💾 Salvar Status</button>' +
     '<div style="font-size:.85rem;font-weight:700;color:var(--mut);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">📁 Documentos de Engenharia</div>' +
     '<label style="display:flex;align-items:center;gap:6px;padding:9px 14px;background:var(--pri);color:#fff;border-radius:7px;cursor:pointer;font-size:.84rem;font-weight:600;width:fit-content;margin-bottom:10px">' +
       '📂 Adicionar documentos' +
       '<input type="file" id="eng-file-input" multiple accept="image/*,.pdf,.doc,.docx,.dwg,.dxf" style="display:none" onchange="engHandleFiles(this)">' +
     '</label>' +
     '<div id="eng-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px"></div>' +
-    '<button class="btn bp" onclick="enviarDocsEngenharia()" style="margin-bottom:10px">📤 Enviar ao Drive</button>' +
+    '<button class="btn bp" id="btn-enviar-eng" onclick="enviarDocsEngenharia()" style="margin-bottom:10px">📤 Enviar ao Drive</button>' +
     '<div id="eng-status-upload" style="font-size:.82rem;margin-bottom:8px"></div>' +
     '<div id="eng-lista" style="margin-top:8px"></div>' +
   '</div>';
@@ -3494,6 +3596,8 @@ function engRemoveFile(i){ _engFiles.splice(i,1); engHandleFiles({files:[]}); }
 
 function enviarDocsEngenharia(){
   if(!_engFiles.length){ toast('Selecione arquivos.'); return; }
+  var btnEnviar = document.getElementById('btn-enviar-eng');
+  if (btnEnviar) btnEnviar.disabled = true;
   var status=document.getElementById('eng-status-upload');
   var total=_engFiles.length, ok=0, err=0;
   if(status) status.innerHTML='Enviando...';
@@ -3509,16 +3613,20 @@ function enviarDocsEngenharia(){
             if(status) status.innerHTML=err?'<span style="color:var(--dan)">'+err+' erro(s)</span>':'<span style="color:#22c55e">✓ Enviado(s)!</span>';
             _engFiles=[]; document.getElementById('eng-preview').innerHTML='';
             carregarDocsEngenharia();
+            if (btnEnviar) btnEnviar.disabled = false;
           }
         })
-        .withFailureHandler(function(){ err++; })
+        .withFailureHandler(function(){
+          err++;
+          if (ok+err>=total && btnEnviar) btnEnviar.disabled = false;
+        })
         .salvarArquivoEngenharia(FORM.clienteId, nome, file.type, base64);
     };
     reader.readAsDataURL(file);
   });
 }
 
-function salvarStatusEng(){
+function salvarStatusEng(btn){
   if (currentUser.papel !== 'eng_super') {
     toast('Sem permissão para editar o status de engenharia.', 'erro');
     return;
@@ -3528,19 +3636,22 @@ function salvarStatusEng(){
   if(!st || !st.value){ toast('Selecione um status.'); return; }
   var statusVal = st.value;
   var obsVal    = ob ? ob.value : '';
+  if (btn) btn.disabled = true;
   google.script.run
     .withSuccessHandler(function(r){
+      if (btn) btn.disabled = false;
       if(r && r.sucesso){
         // Atualiza memória local para refletir imediatamente
         if (!FORM.dados['engenharia']) FORM.dados['engenharia'] = {};
         FORM.dados['engenharia'].status_eng = statusVal;
         FORM.dados['engenharia'].obs_eng    = obsVal;
         toast('Status salvo!','ok');
+        _invalidarPagina('clientes');
       } else {
         toast((r && r.msg) || 'Erro.','erro');
       }
     })
-    .withFailureHandler(function(e){ toast('Erro: '+e.message,'erro'); })
+    .withFailureHandler(function(e){ toast('Erro: '+e.message,'erro'); if (btn) btn.disabled = false; })
     .salvarStatusEngenharia(FORM.clienteId, statusVal, obsVal);
 }
 
@@ -4206,6 +4317,7 @@ if (taForma) {
         st.classList.add('show');
         setTimeout(function() { st.classList.remove('show'); }, 2500);
       }
+      _invalidarPagina('clientes');
       if (idxProx >= 0) irStep(idxProx);
       else toast('Dados salvos!', 'ok');
     })
@@ -4249,7 +4361,7 @@ function renderPDFsDoStep(stepId) {
     '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:var(--bg2,#f8f9fa);border:1.5px dashed var(--borda,#dee2e6)">' +
       '<div style="font-size:.78rem;color:var(--mut);margin-bottom:6px">⬆️ Subir PDF do computador (substitui o existente)</div>' +
       '<input type="file" id="upload-pdf-' + stepId + '" accept="application/pdf" style="font-size:.8rem;width:100%">' +
-      '<button onclick="confirmarUploadPDF()" ' +
+      '<button onclick="confirmarUploadPDF(this)" ' +
         'style="margin-top:8px;padding:6px 16px;background:var(--prim,#4f46e5);color:#fff;border:none;border-radius:7px;font-size:.8rem;cursor:pointer;font-family:inherit;font-weight:600">' +
         '⬆️ Enviar PDF' +
       '</button>' +
@@ -4296,7 +4408,7 @@ function apagarPDFManual(nomeArquivo) {
 }
 
 // ── Upload de PDF do PC (pega stepId do step atual automaticamente) ──
-function confirmarUploadPDF() {
+function confirmarUploadPDF(btn) {
   var stepId = FORM_STEPS[FORM.stepAtual].id;
   var input = document.getElementById('upload-pdf-' + stepId);
 
@@ -4314,15 +4426,17 @@ function confirmarUploadPDF() {
     return;
   }
 
+  if (btn) btn.disabled = true;
   toast('Lendo arquivo...', 'ok');
   var reader = new FileReader();
-  reader.onerror = function() { toast('Erro ao ler o arquivo.', 'erro'); };
+  reader.onerror = function() { toast('Erro ao ler o arquivo.', 'erro'); if (btn) btn.disabled = false; };
   reader.onload = function(e) {
     var base64 = e.target.result.split(',')[1];
-    if (!base64) { toast('Erro ao converter arquivo.', 'erro'); return; }
+    if (!base64) { toast('Erro ao converter arquivo.', 'erro'); if (btn) btn.disabled = false; return; }
     toast('Enviando para o Drive...', 'ok');
     google.script.run
       .withSuccessHandler(function(r) {
+        if (btn) btn.disabled = false;
         if (!r || !r.sucesso) { toast('Erro ao enviar: ' + (r ? r.msg : 'sem resposta'), 'erro'); return; }
         toast('PDF enviado com sucesso!', 'ok');
         input.value = '';
@@ -4335,7 +4449,7 @@ function confirmarUploadPDF() {
           .withFailureHandler(function(e) { toast('PDF enviado, mas erro ao recarregar lista: ' + e.message, 'erro'); })
           .listarPDFs(FORM.clienteId);
       })
-      .withFailureHandler(function(e) { toast('Erro no servidor: ' + e.message, 'erro'); })
+      .withFailureHandler(function(e) { toast('Erro no servidor: ' + e.message, 'erro'); if (btn) btn.disabled = false; })
       .uploadPDFManual(FORM.clienteId, stepId, base64, file.name);
   };
   reader.readAsDataURL(file);
@@ -4520,10 +4634,9 @@ var _notifs = [];
 function iniciarNotificacoes() {
   // Só roda para gerente e admin
   if (currentUser.papel === 'vendedor') return;
-  // Carrega uma vez ao entrar no sistema (pro badge já nascer com o número certo).
-  // Não fica mais checando sozinho de tempos em tempos — só atualiza de novo
-  // quando o usuário clicar no sino (toggleNotifPanel).
-  carregarNotificacoes();
+  // Não busca mais nada automaticamente ao entrar no sistema — economiza
+  // 1 requisição por login. O badge só aparece depois que o usuário clica
+  // no sino pela primeira vez (toggleNotifPanel já busca e atualiza).
 }
 
 function carregarNotificacoes() {
@@ -4623,7 +4736,7 @@ function renderNotifPanel() {
       '<span style="font-size:.78rem;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.05em">' +
         _notifs.length + ' pendente(s)' +
       '</span>' +
-      '<button onclick="marcarTodasLidasUI()" style="font-size:.75rem;color:var(--pri);background:none;border:none;cursor:pointer;font-weight:600">Marcar todas como lidas</button>' +
+      '<button onclick="marcarTodasLidasUI(this)" style="font-size:.75rem;color:var(--pri);background:none;border:none;cursor:pointer;font-weight:600">Marcar todas como lidas</button>' +
     '</div>' +
     _notifs.map(function(n) {
       return '<div style="padding:12px 14px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start">' +
@@ -4636,7 +4749,7 @@ function renderNotifPanel() {
           '<button class="btn bp bsm" style="font-size:.72rem;padding:5px 10px" ' +
             'onclick="abrirClienteDeNotif(\'' + n.clienteId + '\',\'' + n.id + '\')">Ver →</button>' +
           '<button class="btn bo bsm" style="font-size:.72rem;padding:5px 10px" ' +
-            'onclick="marcarLidaUI(\'' + n.id + '\')">✓ Lida</button>' +
+            'onclick="marcarLidaUI(\'' + n.id + '\',this)">✓ Lida</button>' +
         '</div>' +
       '</div>';
     }).join('') +
@@ -4651,25 +4764,27 @@ function abrirClienteDeNotif(clienteId, notifId) {
   setTimeout(function() { abrirCliente(clienteId); }, 300);
 }
 
-function marcarLidaUI(notifId) {
+function marcarLidaUI(notifId, btn) {
+  if (btn) btn.disabled = true;
   google.script.run
     .withSuccessHandler(function() {
       _notifs = _notifs.filter(function(n) { return n.id !== notifId; });
       renderBadgeNotif();
       renderNotifPanel();
     })
-    .withFailureHandler(function() {})
+    .withFailureHandler(function() { if (btn) btn.disabled = false; })
     .marcarNotificacaoLida(notifId);
 }
 
-function marcarTodasLidasUI() {
+function marcarTodasLidasUI(btn) {
+  if (btn) btn.disabled = true;
   google.script.run
     .withSuccessHandler(function() {
       _notifs = [];
       renderBadgeNotif();
       renderNotifPanel();
     })
-    .withFailureHandler(function() {})
+    .withFailureHandler(function() { if (btn) btn.disabled = false; })
     .marcarTodasLidas(currentUser.id, currentUser.papel);
 }
 
@@ -4709,6 +4824,7 @@ function enviarPendencia() {
       btn.disabled = false; btn.textContent = 'Enviar pendência';
       if (r && r.sucesso) {
         alerta('al-pend', 'Pendência enviada!', 'ok');
+        _invalidarPagina('pendencias_pg');
         setTimeout(function() { fm('m-pendencia'); if (document.getElementById('lista-pend-pg')) carregarPendenciasPg(); }, 1200);
       } else {
         alerta('al-pend', (r && r.msg) || 'Erro ao enviar.', 'erro');
@@ -4725,11 +4841,7 @@ function carregarPendenciasPg() {
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:32px;font-size:.84rem">Carregando...</div>';
 
-  var recebidas = null, enviadas = null;
-
-  function renderTudo() {
-    if (recebidas === null || enviadas === null) return;
-
+  function renderTudo(recebidas, enviadas) {
     // Junta e deduplica por id, marcando origem
     var mapa = {};
     recebidas.forEach(function(p) {
@@ -4792,39 +4904,46 @@ function carregarPendenciasPg() {
     }).join('');
   }
 
-  // Busca o que foi enviado PARA o usuário (via listarPendenciasUsuario — já existe no backend)
-  google.script.run
-    .withSuccessHandler(function(list) {
-      // listarPendenciasUsuario retorna só id, deNome, mensagem, criadoEm
-      // Precisamos normalizar para ter deId, paraId etc.
-      recebidas = (list || []).map(function(p) {
-        return {
-          id: p.id, mensagem: p.mensagem, criadoEm: p.criadoEm,
-          deNome: p.deNome, paraNome: currentUser.nome,
-          deId: '', paraId: currentUser.id,
-          concluida: false
-        };
-      });
-      renderTudo();
-    })
-    .withFailureHandler(function() { recebidas = []; renderTudo(); })
-    .listarPendenciasUsuario(currentUser.id);
+  _comCache('pendencias_pg', function(cb){
+    var recebidas = null, enviadas = null;
+    function checar() { if (recebidas !== null && enviadas !== null) cb({ recebidas: recebidas, enviadas: enviadas }); }
 
-  // Busca o que o usuário ENVIOU (via listarPendenciasEnviadas — já existe no backend)
-  google.script.run
-    .withSuccessHandler(function(list) {
-      enviadas = (list || []).map(function(p) {
-        return {
-          id: p.id, mensagem: p.mensagem, criadoEm: p.criadoEm,
-          deNome: currentUser.nome, paraNome: p.paraNome,
-          deId: currentUser.id, paraId: '',
-          concluida: p.concluida
-        };
-      });
-      renderTudo();
-    })
-    .withFailureHandler(function() { enviadas = []; renderTudo(); })
-    .listarPendenciasEnviadas(currentUser.id);
+    // Busca o que foi enviado PARA o usuário (via listarPendenciasUsuario — já existe no backend)
+    google.script.run
+      .withSuccessHandler(function(list) {
+        // listarPendenciasUsuario retorna só id, deNome, mensagem, criadoEm
+        // Precisamos normalizar para ter deId, paraId etc.
+        recebidas = (list || []).map(function(p) {
+          return {
+            id: p.id, mensagem: p.mensagem, criadoEm: p.criadoEm,
+            deNome: p.deNome, paraNome: currentUser.nome,
+            deId: '', paraId: currentUser.id,
+            concluida: false
+          };
+        });
+        checar();
+      })
+      .withFailureHandler(function() { recebidas = []; checar(); })
+      .listarPendenciasUsuario(currentUser.id);
+
+    // Busca o que o usuário ENVIOU (via listarPendenciasEnviadas — já existe no backend)
+    google.script.run
+      .withSuccessHandler(function(list) {
+        enviadas = (list || []).map(function(p) {
+          return {
+            id: p.id, mensagem: p.mensagem, criadoEm: p.criadoEm,
+            deNome: currentUser.nome, paraNome: p.paraNome,
+            deId: currentUser.id, paraId: '',
+            concluida: p.concluida
+          };
+        });
+        checar();
+      })
+      .withFailureHandler(function() { enviadas = []; checar(); })
+      .listarPendenciasEnviadas(currentUser.id);
+  }, function(dados) {
+    renderTudo(dados.recebidas, dados.enviadas);
+  });
 }
 
 function abrirPendenciasEnviadas() {
@@ -4882,77 +5001,75 @@ function concluirPendenciaUI(pendId, btn) {
     .concluirPendencia(pendId, currentUser.id);
 }
 
-function verificarPendenciasLogin() {
-  // — Pendências —
-  google.script.run
-    .withSuccessHandler(function(lista) {
-      if (lista && lista.length) {
-        var el = document.getElementById('pend-card-lista');
-        if (el) {
-          el.innerHTML = lista.map(function(p) {
-            return '<div style="padding:12px 14px;border-bottom:1px solid var(--border)">' +
-              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
-                '<span style="font-size:.78rem;font-weight:700;color:#e67e22">⚠️ Pendência em aberto</span>' +
-                '<span style="font-size:.72rem;color:var(--mut)">🕐 ' + p.criadoEm + '</span>' +
-              '</div>' +
-              '<div style="font-size:.84rem;color:var(--txt);margin-bottom:4px;white-space:pre-wrap">' + p.mensagem + '</div>' +
-              '<div style="font-size:.75rem;color:var(--mut)">Enviado por: <strong>' + p.deNome + '</strong></div>' +
-            '</div>';
-          }).join('');
-        }
-        am('m-pend-card');
-      }
-    })
-    .withFailureHandler(function() {})
-    .listarPendenciasUsuario(currentUser.id);
+function _mostrarAlertasLogin() {
+  // Aproveita o que já veio no boot pra também alimentar o cache da
+  // página de Pendências (se o usuário for até lá, não busca de novo).
+  if (_boot && Array.isArray(_boot.boletos)) {
+    _pagCache['boletos_pg'] = _boot.boletos;
+  }
 
-  // — Boletos não pagos —
-  google.script.run
-    .withSuccessHandler(function(boletos) {
-      if (!boletos || !boletos.length) return;
-      // Filtra apenas os do usuário atual e não pagos
-      var meus = boletos.filter(function(b) {
-        return b.paraId === currentUser.id && !b.pago;
-      });
-      if (!meus.length) return;
-
-      var hoje = new Date(); hoje.setHours(0,0,0,0);
-      var el = document.getElementById('boleto-card-lista');
-      if (!el) return;
-
-      el.innerHTML = meus.map(function(b) {
-        var venc = b.vencimento ? new Date(b.vencimento + 'T00:00:00') : null;
-        var diffDias = venc ? Math.ceil((venc - hoje) / 86400000) : null;
-
-        var tagVenc = '';
-        if (diffDias !== null && diffDias < 0) {
-          tagVenc = '<span style="font-size:.72rem;font-weight:700;color:#dc2626;background:#fee2e2;padding:1px 7px;border-radius:99px">🔴 Vencido há ' + Math.abs(diffDias) + ' dia(s)</span>';
-        } else if (diffDias === 0) {
-          tagVenc = '<span style="font-size:.72rem;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 7px;border-radius:99px">🟡 Vence hoje</span>';
-        } else if (diffDias !== null && diffDias <= 3) {
-          tagVenc = '<span style="font-size:.72rem;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 7px;border-radius:99px">🟡 Vence em ' + diffDias + ' dia(s)</span>';
-        } else if (diffDias !== null) {
-          tagVenc = '<span style="font-size:.72rem;color:#1e40af;background:#eff6ff;padding:1px 7px;border-radius:99px">📅 ' + venc.toLocaleDateString('pt-BR') + '</span>';
-        }
-
+  // — Pendências — (já vieram no boot, não busca de novo)
+  var lista = (_boot && Array.isArray(_boot.pendencias)) ? _boot.pendencias : [];
+  if (lista.length) {
+    var el = document.getElementById('pend-card-lista');
+    if (el) {
+      el.innerHTML = lista.map(function(p) {
         return '<div style="padding:12px 14px;border-bottom:1px solid var(--border)">' +
-          '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;flex-wrap:wrap">' +
-            '<span style="font-size:.88rem;font-weight:700;color:var(--txt)">🧾 ' + b.titulo + '</span>' +
-            tagVenc +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+            '<span style="font-size:.78rem;font-weight:700;color:#e67e22">⚠️ Pendência em aberto</span>' +
+            '<span style="font-size:.72rem;color:var(--mut)">🕐 ' + p.criadoEm + '</span>' +
           '</div>' +
-          '<div style="font-size:.74rem;color:var(--mut);margin-bottom:6px">Enviado por: <strong>' + b.deNome + '</strong></div>' +
-          (b.pdfUrl
-            ? '<a href="' + b.pdfUrl + '" target="_blank" style="font-size:.8rem;color:var(--pri);font-weight:600;text-decoration:none">📄 Abrir PDF ↗</a>'
-            : '') +
+          '<div style="font-size:.84rem;color:var(--txt);margin-bottom:4px;white-space:pre-wrap">' + p.mensagem + '</div>' +
+          '<div style="font-size:.75rem;color:var(--mut)">Enviado por: <strong>' + p.deNome + '</strong></div>' +
         '</div>';
       }).join('');
+    }
+    am('m-pend-card');
+  }
 
-      // Abre o card de boletos após um pequeno delay
-      // (para não sobrepor ao card de pendências se ambos aparecerem)
-      setTimeout(function() { am('m-boleto-card'); }, 400);
-    })
-    .withFailureHandler(function() {})
-    .listarBoletos(currentUser.id, currentUser.papel);
+  // — Boletos não pagos — (já vieram no boot, não busca de novo)
+  var boletos = (_boot && Array.isArray(_boot.boletos)) ? _boot.boletos : [];
+  if (boletos.length) {
+    var meus = boletos.filter(function(b) {
+      return b.paraId === currentUser.id && !b.pago;
+    });
+    if (meus.length) {
+      var hoje = new Date(); hoje.setHours(0,0,0,0);
+      var elB = document.getElementById('boleto-card-lista');
+      if (elB) {
+        elB.innerHTML = meus.map(function(b) {
+          var venc = b.vencimento ? new Date(b.vencimento + 'T00:00:00') : null;
+          var diffDias = venc ? Math.ceil((venc - hoje) / 86400000) : null;
+
+          var tagVenc = '';
+          if (diffDias !== null && diffDias < 0) {
+            tagVenc = '<span style="font-size:.72rem;font-weight:700;color:#dc2626;background:#fee2e2;padding:1px 7px;border-radius:99px">🔴 Vencido há ' + Math.abs(diffDias) + ' dia(s)</span>';
+          } else if (diffDias === 0) {
+            tagVenc = '<span style="font-size:.72rem;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 7px;border-radius:99px">🟡 Vence hoje</span>';
+          } else if (diffDias !== null && diffDias <= 3) {
+            tagVenc = '<span style="font-size:.72rem;font-weight:700;color:#b45309;background:#fef3c7;padding:1px 7px;border-radius:99px">🟡 Vence em ' + diffDias + ' dia(s)</span>';
+          } else if (diffDias !== null) {
+            tagVenc = '<span style="font-size:.72rem;color:#1e40af;background:#eff6ff;padding:1px 7px;border-radius:99px">📅 ' + venc.toLocaleDateString('pt-BR') + '</span>';
+          }
+
+          return '<div style="padding:12px 14px;border-bottom:1px solid var(--border)">' +
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;flex-wrap:wrap">' +
+              '<span style="font-size:.88rem;font-weight:700;color:var(--txt)">🧾 ' + b.titulo + '</span>' +
+              tagVenc +
+            '</div>' +
+            '<div style="font-size:.74rem;color:var(--mut);margin-bottom:6px">Enviado por: <strong>' + b.deNome + '</strong></div>' +
+            (b.pdfUrl
+              ? '<a href="' + b.pdfUrl + '" target="_blank" style="font-size:.8rem;color:var(--pri);font-weight:600;text-decoration:none">📄 Abrir PDF ↗</a>'
+              : '') +
+          '</div>';
+        }).join('');
+
+        // Abre o card de boletos após um pequeno delay
+        // (para não sobrepor ao card de pendências se ambos aparecerem)
+        setTimeout(function() { am('m-boleto-card'); }, 400);
+      }
+    }
+  }
 }
 
 function confirmarBoletoLoginUI(boletoId, btn) {
@@ -4963,6 +5080,7 @@ function confirmarBoletoLoginUI(boletoId, btn) {
         btn.textContent = '✅ Confirmado!';
         btn.style.opacity = '.5';
         toast('Pagamento confirmado!', 'ok');
+        _invalidarPagina('boletos_pg');
       } else {
         btn.disabled = false; btn.textContent = '✅ Confirmar recebimento';
         toast((r && r.msg) || 'Erro.', 'erro');
@@ -5012,6 +5130,7 @@ function enviarBoleto() {
         btn.disabled = false; btn.textContent = '📤 Enviar boleto';
         if (r && r.sucesso) {
           alerta('al-boleto', 'Boleto enviado com sucesso!', 'ok');
+          _invalidarPagina('boletos_pg');
           setTimeout(function() { fm('m-boleto'); }, 1200);
         } else {
           alerta('al-boleto', (r && r.msg) || 'Erro ao enviar.', 'erro');
@@ -5168,6 +5287,7 @@ function removerPendenciaUI(pendId, btn) {
     .withSuccessHandler(function(r) {
       if (r && r.sucesso) {
         toast('Pendência removida.', 'ok');
+        _invalidarPagina('pendencias_pg');
         carregarPendenciasPg();
       } else {
         btn.disabled = false; btn.textContent = '🗑️ Remover';
@@ -5185,8 +5305,15 @@ function carregarBoletosPg() {
   var el = document.getElementById('lista-boletos-pg');
   if (!el) return;
   el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:32px;font-size:.84rem">Carregando...</div>';
-  google.script.run
-    .withSuccessHandler(function(boletos) {
+  _comCache('boletos_pg', function(cb){
+    google.script.run.withSuccessHandler(cb)
+      .withFailureHandler(function(){
+        var el2 = document.getElementById('lista-boletos-pg');
+        if (el2) el2.innerHTML = '<div style="color:var(--dan);padding:20px;text-align:center">Erro ao carregar boletos.</div>';
+        cb([]);
+      })
+      .listarBoletos(currentUser.id, currentUser.papel);
+  }, function(boletos) {
       if (!el) return;
       if (!boletos || !boletos.length) {
         el.innerHTML = '<div style="text-align:center;color:var(--mut);padding:32px;font-size:.84rem">Nenhum boleto.</div>';
@@ -5272,12 +5399,7 @@ var _h = new Date();
           acoesRemetente +
         '</div>';
       }).join('');
-    })
-    .withFailureHandler(function() {
-      var el2 = document.getElementById('lista-boletos-pg');
-      if (el2) el2.innerHTML = '<div style="color:var(--dan);padding:20px;text-align:center">Erro ao carregar boletos.</div>';
-    })
-    .listarBoletos(currentUser.id, currentUser.papel);
+  });
 }
 
 function confirmarBoletoUI(boletoId, btn) {
@@ -5286,6 +5408,7 @@ function confirmarBoletoUI(boletoId, btn) {
     .withSuccessHandler(function(r) {
       if (r && r.sucesso) {
         toast('Pagamento confirmado!', 'ok');
+        _invalidarPagina('boletos_pg');
         carregarBoletosPg();
       } else {
         btn.disabled = false; btn.textContent = '✅ Confirmar recebimento';
@@ -5306,6 +5429,7 @@ function reabrirBoletoUI(boletoId, btn) {
     .withSuccessHandler(function(r) {
       if (r && r.sucesso) {
         toast('Boleto reaberto — aguardando confirmação novamente.', 'ok');
+        _invalidarPagina('boletos_pg');
         carregarBoletosPg();
       } else {
         btn.disabled = false; btn.textContent = '↩ Reabrir';
@@ -5326,6 +5450,7 @@ function excluirBoletoUI(boletoId, btn) {
     .withSuccessHandler(function(r) {
       if (r && r.sucesso) {
         toast('Boleto excluído.', 'ok');
+        _invalidarPagina('boletos_pg');
         carregarBoletosPg();
       } else {
         btn.disabled = false; btn.textContent = '🗑️ Excluir';
@@ -5391,6 +5516,7 @@ function confirmarExcluirCliente(clienteId, nomeCliente) {
         renderCliEng(_todosEnviadosEng, _engClientes || {});
 
         toast('Cliente excluído com sucesso.', 'ok');
+        _invalidarPagina('clientes');
       } else {
         toast((r && r.msg) || 'Erro ao excluir cliente.', 'erro');
       }
