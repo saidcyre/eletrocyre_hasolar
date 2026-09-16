@@ -4,18 +4,9 @@
 <base target="_top">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>H.A SOLAR</title>
-  <link rel="icon" type="image/jpeg" href="logo.jpeg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#f59e0b">
-    <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#f59e0b">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="H.A Solar">
-  <link rel="apple-touch-icon" href="/icon-192.png">
 <title>H.A Solar</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Serif+Display&display=swap" rel="stylesheet">
@@ -25,40 +16,6 @@
 var _todosEnviadosEng = []; // cache do grupo engenharia
 </script>
 <style>
-   * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%;
-      height: 100%;
-      height: 100dvh;
-      overflow: hidden;
-    }
-    iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-      display: block;
-    }
-
-    /* Botão instalar — flutua no canto, some após instalar */
-    #btnInstalar {
-      display: none;
-      position: fixed;
-      bottom: 24px;
-      right: 20px;
-      z-index: 9999;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 18px;
-      background: linear-gradient(135deg, #f59e0b, #d97706);
-      color: #fff;
-      border: none;
-      border-radius: 50px;
-      font-size: .95rem;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 4px 20px rgba(245,158,11,.5);
-      font-family: sans-serif;
-    }
 .s-pago      { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7; }
 .s-pago .dot { background:#10b981; }
 .be { background: #7c3aed22; color: #7c3aed; border: 1px solid #7c3aed55; }
@@ -506,7 +463,7 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
 <div style="padding:8px 10px 4px;border-top:1px solid var(--border);margin-top:4px">
   <input id="versaoSistema"
          type="text"
-         placeholder="v4.4.4"
+         placeholder="v3.11.0"
          value=""
          style="width:100%;padding:4px 8px;border:1px solid var(--border);border-radius:6px;
                 font-size:.65rem;color:var(--mut);background:transparent;text-align:center;
@@ -744,10 +701,10 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
 
 <script>
 /* ════════════════════════════════════════════════════════════════
-   SHIM .script.run → fetch()
-   Faz a página funcionar hospedada fora do  (GitHub Pages),
+   SHIM google.script.run → fetch()
+   Faz a página funcionar hospedada fora do Google (GitHub Pages),
    falando com a API como JSON puro. Nenhuma das chamadas
-   .script.run já existentes no código precisa mudar.
+   google.script.run já existentes no código precisa mudar.
 
    MIGRAÇÃO GRADUAL PRO CLOUDFLARE:
    Função por função, conforme cada uma é reescrita como Worker,
@@ -758,7 +715,7 @@ left:-100%;width:var(--sidebar-w)!important;transition:left .25s cubic-bezier(.4
    ════════════════════════════════════════════════════════════════ */
 (function () {
   // ⚠️ Troque esta URL sempre que reimplantar uma NOVA versão do Apps Script
-  var API_URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbzcKgGoW-zUhN6lQjlmCRgY0We0NtALAw55SniRAxvWSy2WPzIj0L9_D2aLXzJg1djvmw/exec";
+  var API_URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbz0_iPBalt7lXtakDGCRURY72JAKGOgGnbASM8LbuXbeEPAK0DE1uarD6kLBT_1u4ui9g/exec";
 
   // ⚠️ Preencha com a URL do seu Worker depois do `wrangler deploy`
   // (algo como https://crm-solar-api.SEUSUBDOMINIO.workers.dev)
@@ -1130,7 +1087,8 @@ function iniciarApp(u){
       {id:'equipamentos',l:'Equipamentos',i:'⚡'},
       {id:'clientes',    l:'Clientes',    i:'👤'},
       {id:'pendencias',  l:'Pendências',  i:'📋'},
-      {id:'vendedores', l:'Vendedores',  i:'👥'}
+      {id:'vendedores', l:'Vendedores',  i:'👥'},
+      {id:'calc_solar', l:'Calculadora Solar', i:'☀️'}
     ],
     admin: [
       {id:'unidades',    l:'Unidades',    i:'🏗️'},
@@ -1138,18 +1096,21 @@ function iniciarApp(u){
       {id:'equipamentos',l:'Equipamentos',i:'⚡'},
       {id:'clientes',    l:'Clientes',    i:'👤'},
       {id:'pendencias',  l:'Pendências',  i:'📋'},
-      {id:'vendedores', l:'Vendedores',  i:'👥'}
+      {id:'vendedores', l:'Vendedores',  i:'👥'},
+      {id:'calc_solar', l:'Calculadora Solar', i:'☀️'}
 
     ],
     gerente: [
       {id:'gerente',    l:'Painel',      i:'📊'},
       {id:'vendedores', l:'Vendedores',  i:'👥'},
       {id:'clientes',   l:'Clientes',    i:'👤'},
-      {id:'pendencias', l:'Pendências',  i:'📋'}
+      {id:'pendencias', l:'Pendências',  i:'📋'},
+      {id:'calc_solar', l:'Calculadora Solar', i:'☀️'}
     ],
     vendedor: [
       {id:'clientes',   l:'Meus Clientes', i:'👤'},
-      {id:'pendencias', l:'Pendências',    i:'📋'}
+      {id:'pendencias', l:'Pendências',    i:'📋'},
+      {id:'calc_solar', l:'Calculadora Solar', i:'☀️'}
     ]
   };
   var items=MENUS[u.papel]||[];
@@ -1224,7 +1185,8 @@ function nav(p) {
   var PAGE_TITLES = {
     unidades:'Unidades', gerentes:'Gerentes', usuarios:'Usuários',
     equipamentos:'Equipamentos & Kits', clientes:'Clientes',
-    gerente:'Painel do Gerente', vendedores:'Vendedores', pendencias:'Pendências'
+    gerente:'Painel do Gerente', vendedores:'Vendedores', pendencias:'Pendências',
+    calc_solar:'Calculadora Solar'
   };
   document.getElementById('topbarTitle').textContent = PAGE_TITLES[p] || p;
   document.getElementById('topbarBadge').textContent =
@@ -1242,6 +1204,7 @@ function nav(p) {
   else if (p === 'vendedores')   { pgVendedores(m); }
   else if (p === 'usuarios')     { pgUsr(m); }
   else if (p === 'clientes')     { pgCli(m); }
+  else if (p === 'calc_solar')   { pgCalcSolar(m); }
 
   closeMob();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1434,6 +1397,137 @@ function pgUsr(main) {
         google.script.run.withSuccessHandler(cb).withFailureHandler(function(){cb([]);}).listarTodosUsuarios();
       }, renderTbUsr);
     }
+
+// ════════════════════════════════════════════════════════════════
+// CALCULADORA SOLAR — estima o dimensionamento (módulos + inversor)
+// a partir do consumo mensal e orientação do telhado. Usa os módulos
+// e inversores já cadastrados em Equipamentos (mesma fonte de dados
+// da Proposta), sem precisar de um banco separado.
+// ════════════════════════════════════════════════════════════════
+var CALC_SOLAR_ORIENTACAO = {
+  'NORTE':    1.00, 'SUL':      0.93, 'LESTE':    0.96, 'OESTE':    0.96,
+  'NORDESTE': 0.97, 'NOROESTE': 0.97, 'SUDESTE':  0.95, 'SUDOESTE': 0.95
+};
+var CALC_SOLAR_INSOLACAO_MEDIA = 4.8;   // kWh/m².dia — média regional de referência
+var CALC_SOLAR_PERFORMANCE     = 0.82;  // performance ratio do sistema
+var CALC_SOLAR_MAX_OVERLOAD    = 1.5;   // relação máxima PV/inversor
+
+function pgCalcSolar(main) {
+  main.innerHTML =
+    '<h2 class="tt" style="margin-bottom:4px">☀️ Calculadora Solar</h2>' +
+    '<p style="color:var(--mut);font-size:.84rem;margin-bottom:20px">' +
+      'Estima a potência do arranjo e sugere o inversor a partir do consumo mensal.' +
+    '</p>' +
+    '<div class="card" style="max-width:640px">' +
+      '<div class="campo"><label>Consumo mensal estimado (kWh/mês) <span class="req">*</span></label>' +
+        '<input type="number" id="cs-consumo" inputmode="decimal" placeholder="Ex: 500"></div>' +
+      '<div class="fg2">' +
+        '<div class="campo"><label>Orientação do telhado <span class="req">*</span></label>' +
+          '<select id="cs-orientacao">' +
+            Object.keys(CALC_SOLAR_ORIENTACAO).map(function(o) {
+              return '<option value="' + o + '">' + o + '</option>';
+            }).join('') +
+          '</select></div>' +
+        '<div class="campo"><label>Módulo fotovoltaico <span class="req">*</span></label>' +
+          '<select id="cs-modulo"><option value="">Carregando...</option></select></div>' +
+      '</div>' +
+      '<button class="btn bp" style="width:100%;margin-top:4px" onclick="calcularSolarUI()">☀️ Calcular</button>' +
+    '</div>' +
+    '<div id="cs-resultado" style="max-width:640px;margin-top:16px"></div>';
+
+  _comEquipamentos(function() {
+    var sel = document.getElementById('cs-modulo');
+    if (!sel) return;
+    if (!_eqMod.length) {
+      sel.innerHTML = '<option value="">Nenhum módulo cadastrado em Equipamentos</option>';
+      return;
+    }
+    sel.innerHTML = _eqMod.map(function(m) {
+      return '<option value="' + m.id + '">' + m.marca + ' ' + m.modelo + ' — ' + m.potNominal + 'Wp</option>';
+    }).join('');
+  });
+}
+
+// Réplica da lógica de estimate_solar_system() da calculadora em Python,
+// usando os módulos/inversores já carregados em _eqMod/_eqInv.
+function estimarSistemaSolar(consumoKwhMes, orientacao, moduloId) {
+  orientacao = String(orientacao || '').toUpperCase();
+  if (!CALC_SOLAR_ORIENTACAO.hasOwnProperty(orientacao)) {
+    throw new Error('Orientação do telhado inválida.');
+  }
+  consumoKwhMes = parseFloat(String(consumoKwhMes).replace(',', '.'));
+  if (!consumoKwhMes || consumoKwhMes <= 0) {
+    throw new Error('Consumo mensal em kWh/mês deve ser maior que zero.');
+  }
+
+  var modulo = _eqMod.filter(function(m) { return m.id === moduloId; })[0];
+  if (!modulo) throw new Error('Selecione um módulo válido.');
+
+  var geracaoDiariaKwh = consumoKwhMes / 30.0;
+  var irradiacaoEfetiva = CALC_SOLAR_INSOLACAO_MEDIA * CALC_SOLAR_PERFORMANCE * CALC_SOLAR_ORIENTACAO[orientacao];
+  if (irradiacaoEfetiva <= 0) throw new Error('Insolação/eficiência não pode ser zero.');
+
+  var arrayKwpNecessario = geracaoDiariaKwh / irradiacaoEfetiva;
+
+  var moduloKw = Number(modulo.potNominal) / 1000.0;
+  if (moduloKw <= 0) throw new Error('Potência do módulo inválida.');
+
+  var qtdModulos = Math.ceil(arrayKwpNecessario / moduloKw);
+  var arrayKwpEstimado = qtdModulos * moduloKw;
+
+  // Inversor mais barato/próximo que respeite a sobrecarga máxima de 1,5
+  var candidatos = _eqInv.filter(function(inv) {
+    return Number(inv.potNominal) >= arrayKwpEstimado / CALC_SOLAR_MAX_OVERLOAD;
+  });
+  candidatos.sort(function(a, b) { return Number(a.potNominal) - Number(b.potNominal); });
+  var inversorSugerido = candidatos.length ? candidatos[0] : null;
+
+  return {
+    consumoKwhMes: consumoKwhMes,
+    orientacao: orientacao,
+    fatorOrientacao: CALC_SOLAR_ORIENTACAO[orientacao],
+    modulo: modulo,
+    qtdModulos: qtdModulos,
+    arrayKwp: arrayKwpEstimado,
+    inversorSugerido: inversorSugerido
+  };
+}
+
+function calcularSolarUI() {
+  var consumo = (document.getElementById('cs-consumo') || {}).value;
+  var orientacao = (document.getElementById('cs-orientacao') || {}).value;
+  var moduloId = (document.getElementById('cs-modulo') || {}).value;
+  var el = document.getElementById('cs-resultado');
+  if (!el) return;
+
+  try {
+    var r = estimarSistemaSolar(consumo, orientacao, moduloId);
+  } catch (e) {
+    toast(e.message, 'erro');
+    return;
+  }
+
+  var overloadReal = r.inversorSugerido ? (r.arrayKwp / Number(r.inversorSugerido.potNominal)) : null;
+
+  el.innerHTML =
+    '<div class="review-box">' +
+      '<div class="review-row"><span class="rk">Consumo mensal</span><span class="rv">' + r.consumoKwhMes.toFixed(2) + ' kWh/mês</span></div>' +
+      '<div class="review-row"><span class="rk">Orientação</span><span class="rv">' + r.orientacao + ' (fator ' + r.fatorOrientacao.toFixed(2) + ')</span></div>' +
+      '<div class="review-row"><span class="rk">Insolação média</span><span class="rv">' + CALC_SOLAR_INSOLACAO_MEDIA.toFixed(1) + ' kWh/m².dia</span></div>' +
+      '<div class="review-row"><span class="rk">Módulo selecionado</span><span class="rv">' + r.modulo.marca + ' ' + r.modulo.modelo + ' — ' + r.modulo.potNominal + 'Wp</span></div>' +
+      '<div class="review-row"><span class="rk">Qtd. mínima de módulos</span><span class="rv">' + r.qtdModulos + ' unid.</span></div>' +
+      '<div class="review-row" style="background:var(--pri-light)"><span class="rk" style="font-weight:700">Potência do arranjo</span><span class="rv" style="color:var(--pri);font-size:1rem">' + r.arrayKwp.toFixed(2) + ' kWp</span></div>' +
+      '<div class="review-row"><span class="rk">Inversor sugerido</span><span class="rv">' +
+        (r.inversorSugerido
+          ? r.inversorSugerido.marca + ' ' + r.inversorSugerido.modelo + ' — ' + r.inversorSugerido.potNominal + 'kW'
+          : '<span class="rv-err">Nenhum inversor cadastrado atende a sobrecarga máxima</span>') +
+      '</span></div>' +
+      (overloadReal ? '<div class="review-row"><span class="rk">Relação PV/Inversor</span><span class="rv">' + overloadReal.toFixed(2) + ' (máx. ' + CALC_SOLAR_MAX_OVERLOAD.toFixed(1) + ')</span></div>' : '') +
+    '</div>' +
+    '<p style="font-size:.78rem;color:var(--mut)">' +
+      '💡 Estimativa de referência. O inversor é sugerido respeitando a relação máxima de sobrecarga PV/inversor de ' + CALC_SOLAR_MAX_OVERLOAD.toFixed(1) + '.' +
+    '</p>';
+}
 
 function pgGerente(main){
   main.innerHTML='<h2 class="tt" style="margin-bottom:20px">📊 Painel do Gerente</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px">'+
@@ -5682,90 +5776,5 @@ function atualizarTextoPagamento() {
   FORM.dados['financiamento']['texto_forma_pagamento'] = texto;
 }
 </script>
-<button id="btnInstalar" onclick="instalarPWA()">
-    📲 Instalar app
-  </button>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw.js')
-          .then(function (reg) { console.log('SW ok:', reg.scope); })
-          .catch(function (err) { console.warn('SW falhou:', err); });
-      });
-    }
-
-    var _pwaPrompt = null;
-
-    window.addEventListener('beforeinstallprompt', function (e) {
-      e.preventDefault();
-      _pwaPrompt = e;
-      // Chrome liberou — mostra botão flutuante
-      document.getElementById('btnInstalar').style.display = 'flex';
-    });
-
-    window.addEventListener('appinstalled', function () {
-      _pwaPrompt = null;
-      document.getElementById('btnInstalar').style.display = 'none';
-    });
-
-    function instalarPWA() {
-      if (_pwaPrompt) {
-        // Chrome suporta instalação automática
-        _pwaPrompt.prompt();
-        _pwaPrompt.userChoice.then(function (r) {
-          _pwaPrompt = null;
-          document.getElementById('btnInstalar').style.display = 'none';
-        });
-      } else {
-        // Fallback: mostra instruções manuais por navegador
-        var ua = navigator.userAgent;
-        var msg = '';
-        if (/iPhone|iPad/i.test(ua)) {
-          msg = '🍎 iPhone/iPad:\nSafari → toque em Compartilhar (□↑) → "Adicionar à Tela de Início"';
-        } else if (/Android/i.test(ua)) {
-          msg = '🤖 Android:\nChrome → toque nos 3 pontos (⋮) → "Adicionar à tela inicial"';
-        } else {
-          msg = '🖥️ Desktop (Chrome/Edge):\nClique no ícone ⊕ na barra de endereço\nou Menu → "Instalar H.A Solar"';
-        }
-        alert(msg);
-      }
-    }
-
-    // Não mostra se já está instalado
-    var jaInstalado = window.matchMedia('(display-mode: standalone)').matches
-                   || window.navigator.standalone === true;
-
-    if (!jaInstalado) {
-      var btn = document.getElementById('btnInstalar');
-      btn.style.display = 'flex';
-
-      // Some sozinho após 30 segundos
-      var timer = setTimeout(function() {
-        esconderBtn();
-      }, 30000);
-
-      function esconderBtn() {
-        clearTimeout(timer);
-        btn.style.transition = 'opacity 0.5s';
-        btn.style.opacity = '0';
-        setTimeout(function() { btn.style.display = 'none'; }, 500);
-      }
-
-      // Some imediatamente após clicar
-      btn.addEventListener('click', function() {
-        setTimeout(esconderBtn, 500);
-      }, { once: true });
-    }
-  </script>
- <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/sw.js')
-          .then(function (reg) { console.log('SW ok:', reg.scope); })
-          .catch(function (err) { console.warn('SW falhou:', err); });
-      });
-    }
-  </script>
 </body>
 </html>
